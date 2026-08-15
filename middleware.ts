@@ -27,8 +27,11 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the login page, the API, static assets and the health check.
+  // Everything except the login page, the API, static assets and the health
+  // check. Fonts are in that list on purpose: the landing page is the one
+  // screen anonymous visitors see, and bouncing its typeface to /login would
+  // render it in the fallback stack.
   matcher: [
-    "/((?!login|api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!login|api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?|ttf|otf)$).*)",
   ],
 };
