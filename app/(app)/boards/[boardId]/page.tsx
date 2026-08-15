@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { BoardCanvasPlaceholder } from "@/components/board-canvas-placeholder";
+import { BoardCanvas } from "@/components/board-canvas";
 import { StatusBadge } from "@/components/status-badge";
 import { requireUser } from "@/lib/auth/current-user";
 import { getBoardAccess } from "@/lib/boards/queries";
+import { yjsServerUrl } from "@/lib/collab/config";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function BoardPage({
   }
 
   return (
-    <main className="container">
+    <main className="container board-page">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1>{access.board.title}</h1>
         <StatusBadge status={access.board.status} />
@@ -37,10 +38,13 @@ export default async function BoardPage({
         </p>
       ) : null}
 
-      <BoardCanvasPlaceholder
+      <BoardCanvas
         boardId={access.board.id}
+        boardTitle={access.board.title}
         canWrite={access.canWrite}
         status={access.board.status}
+        user={{ id: user.id, displayName: user.displayName }}
+        serverUrl={yjsServerUrl()}
       />
     </main>
   );

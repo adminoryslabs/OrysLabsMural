@@ -39,6 +39,8 @@ services:
     build:
       context: .
       target: runner
+      args:
+        NEXT_PUBLIC_YJS_URL: ${NEXT_PUBLIC_YJS_URL:-wss://${APP_DOMAIN}/yjs}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -65,26 +67,43 @@ services:
       start_period: 20s
 
   # ---------------------------------------------------------------------------
-  # PHASE B OWNS THIS SERVICE.
-  # It is declared now so Caddy routing, networking and env wiring are already
-  # in place. Phase B replaces `image` with `build: { context: ./yjs-server }`
-  # (or keeps a published image) and implements the server itself. It must:
-  #   - listen on port 1234 (or change YJS_PORT and the Caddyfile together)
-  #   - authenticate the handshake against the `mural_session` cookie
-  #   - read board status through lib/boards/queries#getBoardAccess
-  #   - write board_sessions / board_snapshots
-  # Until then this service is commented out so the stack starts cleanly.
+  # Collaboration server: authenticates the websocket upgrade against the
+  # `mural_session` cookie, enforces board status on every write, and owns
+  # board_sessions / board_snapshots.
+  #
+  # The build context is the repository root (not ./yjs-server) because this
+  # process imports lib/auth and lib/boards directly: the authority rules must
+  # exist once, not twice.
   # ---------------------------------------------------------------------------
-  # yjs:
-  #   build:
-  #     context: ./yjs-server
-  #   restart: unless-stopped
-  #   environment:
-  #     DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mural}
-  #     YJS_PORT: 1234
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
+  yjs:
+    build:
+      context: .
+      target: yjs
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mural}
+      YJS_PORT: 1234
+      YJS_SNAPSHOT_DEBOUNCE_MS: ${YJS_SNAPSHOT_DEBOUNCE_MS:-2000}
+      YJS_HEARTBEAT_MS: ${YJS_HEARTBEAT_MS:-20000}
+      YJS_STALE_AFTER_SECONDS: ${YJS_STALE_AFTER_SECONDS:-120}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:1234/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   caddy:
     image: caddy:2-alpine
@@ -102,6 +121,7 @@ services:
       - caddy_config:/config
     depends_on:
       - app
+      - yjs
 
 volumes:
   pgdata:

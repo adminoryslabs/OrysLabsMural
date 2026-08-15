@@ -4,10 +4,9 @@ Self-hosted collaborative whiteboard for software architecture classes.
 Next.js (App Router) + TypeScript, PostgreSQL 17 + Drizzle, deployed with Docker
 Compose behind Caddy.
 
-**Phase A (this repository state)** delivers the foundation: authentication,
-the teacher panel, the data model and the participation log.
-**Phase B** adds the Excalidraw canvas and the Yjs websocket server; the seams
-it plugs into are listed at the end of this file.
+Two processes: the Next.js app, and a Yjs websocket server that owns the live
+document. They share `lib/`, so the rules about who may write to a board exist
+exactly once.
 
 ## Requirements
 
@@ -21,8 +20,19 @@ docker compose up -d         # Postgres 17 on localhost:5433
 npm install
 npm run db:migrate           # apply SQL migrations
 npm run db:seed              # create the teacher + student accounts
-npm run dev                  # http://localhost:3000
+npm run dev:all              # app on :3000 + collaboration server on :1234
 ```
+
+`npm run dev:all` runs both processes. To watch their logs separately, use two
+terminals instead:
+
+```bash
+npm run dev                  # http://localhost:3000
+npm run yjs                  # ws://localhost:1234
+```
+
+Both need `DATABASE_URL`. The board page will load without the collaboration
+server, but the canvas will sit on "Connecting…" and nothing will sync.
 
 `npm run db:seed` prints the generated credentials and writes them to
 `seed-credentials.csv` (gitignored). Hand them out, then delete the file.
@@ -42,10 +52,20 @@ npm test
 The suite runs against a real PostgreSQL database (`mural_test`), recreated and
 migrated on every run. The database layer is never mocked.
 
+`tests/yjs/` boots the real websocket server on an ephemeral port and speaks
+the real protocol to it over a real socket, using the same `BoardSession` class
+the browser runs. It covers handshake rejection, write refusal on a frozen or
+read-only board (including a freeze that lands mid-session), snapshot
+round-trips and rehydration after a restart, presence, and the whole
+`board_sessions` lifecycle.
+
 ## Other commands
 
 | Command               | What it does                                         |
 | --------------------- | ---------------------------------------------------- |
+| `npm run dev:all`     | App and collaboration server together                 |
+| `npm run yjs`         | Collaboration server only                             |
+| `npm run assets`      | Copy Excalidraw's fonts into `public/` (auto on dev/build) |
 | `npm run db:generate` | Generate a migration after editing `lib/db/schema.ts` |
 | `npm run db:migrate`  | Apply pending migrations                              |
 | `npm run typecheck`   | `tsc --noEmit`                                        |
@@ -123,110 +143,112 @@ for Phase A but needs no migration.
 
 ```
 app/                 Routes. (app)/ is the authenticated shell.
-components/          Shared UI, including the canvas placeholder.
+components/          Shared UI, including the Excalidraw canvas.
 lib/auth/            Passwords, sessions, cookies, guards.
 lib/boards/          Board authority rules, queries, Yjs snapshots.
+lib/collab/          The browser side of the collaboration link.
 lib/participation/   The participation/attribution log.
 lib/db/              Drizzle schema and client.
+yjs-server/          The websocket server. A separate Node process.
 drizzle/             Generated SQL migrations.
-scripts/             migrate.ts, seed.ts.
+scripts/             migrate.ts, seed.ts, excalidraw-assets.ts.
 tests/               Vitest suites against a real Postgres.
 ```
 
----
+## Realtime collaboration
 
-## Phase B: the seams to plug into
+The canvas is [Excalidraw](https://github.com/excalidraw/excalidraw) (MIT) bound
+to a [Yjs](https://github.com/yjs/yjs) CRDT. `yjs-server/` is a plain Node
+process that relays updates between clients, persists the document, and decides
+who may write. It shares `lib/` with the app on purpose: `getBoardAccess` and
+`validateSessionToken` have one implementation, not two.
 
-Phase B owns the Excalidraw canvas and the Yjs websocket server. Everything it
-needs already exists; do not re-derive any of it.
-
-### 1. Replace the canvas placeholder
-
-`components/board-canvas-placeholder.tsx`, mounted by
-`app/(app)/boards/[boardId]/page.tsx`. The page already resolves and passes
-`boardId` (use it as the Yjs room name), `canWrite` and `status`. Treat
-`canWrite` as a UI hint only — the server re-checks.
-
-### 2. Board status — source of truth
-
-```ts
-import { getBoardAccess } from "@/lib/boards/queries";
-
-const access = await getBoardAccess(db, boardId, userId);
-// null              -> board does not exist
-// access.canView    -> may open/subscribe to the room
-// access.canWrite   -> may apply updates
-// access.board.status, access.isMember, access.role
+```
+browser ──ws──> yjs-server ──> postgres
+   │                              ▲
+   └────https──> next.js ─────────┘
 ```
 
-One round trip: board row + membership + role from the database, then the pure
-rules. Call it on every handshake and re-check on write. Never cache the verdict
-across a status change — the teacher can freeze a board mid-class, and the
-freeze must take effect on the next update, so re-read at least per write batch
-(or subscribe to a Postgres `NOTIFY` if that proves too chatty).
+In production Caddy proxies `/yjs*` on the app's own domain, so the browser
+sends the `mural_session` cookie on the upgrade request. That cookie is the
+only identity the server accepts.
 
-### 3. Authenticating a websocket connection
+### The server is the authority
 
-The browser sends the `mural_session` cookie on the websocket upgrade request
-(same origin; Caddy proxies `/yjs` on the same domain — see the commented block
-in `Caddyfile`). On the server:
+| Frame                 | Checked against the database? |
+| --------------------- | ----------------------------- |
+| upgrade (handshake)   | yes — session, then `canView` |
+| sync step 1 (a read)  | no — the handshake settled it |
+| an update (a write)   | **yes, every single time**    |
+| awareness (a cursor)  | no — presence is not a write  |
 
-```ts
-import { validateSessionToken } from "@/lib/auth/session";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/cookies"; // "mural_session"
+A write frame costs one indexed query, and that is the point: the teacher can
+freeze a board mid-class from the panel, and the freeze has to bite on the very
+next update rather than on the next reconnect. There is no cached verdict.
 
-// parse the raw Cookie header of the upgrade request yourself:
-// lib/auth/cookies.ts uses next/headers and is Next-only.
-const { user } = await validateSessionToken(db, token);
-if (!user) socket.close(); // reject the upgrade
-```
+`viewModeEnabled` on the canvas is the UI reflecting the server's answer, never
+the enforcement. A student with devtools open who forces a write gets it
+dropped, is told why, and has their client resynchronised.
 
-`validateSessionToken` hashes the token, checks expiry, deletes expired rows and
-returns the user with the role read from the database. It takes an explicit
-`Database`, so it works outside Next.js. Reject the upgrade before joining a
-room; never accept a user id sent by the client.
+Refusals are deliberately indistinguishable:
 
-### 4. Writing the participation log
+| Situation                        | Close code | Reason          |
+| -------------------------------- | ---------- | --------------- |
+| no cookie / expired / forged      | 4401       | `unauthenticated` |
+| board does not exist              | 4404       | `board not found` |
+| board exists but is not yours     | 4404       | `board not found` |
 
-```ts
-import {
-  startBoardSession,
-  recordBoardActivity,
-  endBoardSession,
-  closeStaleBoardSessions,
-} from "@/lib/participation/queries";
+That last pair is the same property Phase A's `notFound()` gives the web app:
+membership cannot be probed from outside. Codes in 4400-4499 tell the client to
+stop reconnecting; a restart closes with 1001 so clients come back.
 
-const session = await startBoardSession(db, { boardId, userId, connectionId });
-await recordBoardActivity(db, session.id, { edits: n });   // heartbeat, ~15-30s
-await endBoardSession(db, session.id);                     // on close
-await closeStaleBoardSessions(db, { staleAfterSeconds: 120 }); // periodic job
-```
+### Why a refused write forces a resynchronisation
 
-The heartbeat is not optional: it is what bounds a session that never closes
-cleanly. One row per connection, so multiple tabs stay distinguishable.
+A CRDT has no concept of a rejected operation. The client applied its change
+locally before sending it, so once the server drops it the two documents have
+diverged, and every later update from that client references operations the
+server never saw — the board would silently stop converging for that user.
 
-### 5. Persisting the document
+So `lib/collab/board-session.ts` treats a refusal as fatal to the local copy:
+it throws the document away and takes the server's again. `BoardSession` is
+framework-free, and the test suite drives the same class the browser does.
 
-```ts
-import {
-  saveBoardSnapshot,
-  getLatestBoardSnapshot,
-  pruneBoardSnapshots,
-} from "@/lib/boards/snapshots";
+### Persistence
 
-const snapshot = await getLatestBoardSnapshot(db, boardId); // on first join
-if (snapshot) Y.applyUpdate(doc, snapshot.state);
+The document is written to `board_snapshots` on a debounce
+(`YJS_SNAPSHOT_DEBOUNCE_MS`, 2s) and again when the last client leaves. The
+first client to open a board rehydrates it from the newest snapshot, so a
+restart of the server loses nothing. History is trimmed to
+`YJS_SNAPSHOT_HISTORY` rows, and `boards.updated_at` is touched on every save.
 
-await saveBoardSnapshot(db, boardId, Y.encodeStateAsUpdate(doc)); // debounced
-await pruneBoardSnapshots(db, boardId, 20);
-```
+### Attribution
 
-Append-only, so a corrupted board can be rolled back. Call
-`touchBoard(db, boardId)` after a save to keep `boards.updated_at` meaningful.
+Every accepted connection opens a `board_sessions` row and heartbeats it every
+`YJS_HEARTBEAT_MS`. Edits are counted per connection and flushed with the
+heartbeat; the row is closed on disconnect, on shutdown, or by the sweeper if a
+tab dies silently. A client whose write was refused reconnects, which closes
+its row and opens a new one — the same user then shows two sessions, which is
+accurate: they were two connections.
 
-### 6. Infrastructure already prepared
+### Export
 
-- `docker-compose.prod.yml` contains a commented `yjs` service (build context
-  `./yjs-server`, port 1234) — fill it in and uncomment.
-- `Caddyfile` contains the matching commented `/yjs*` reverse proxy block.
-- `NEXT_PUBLIC_YJS_URL` is already wired through the compose environment.
+The canvas exports to PNG and SVG through Excalidraw's own helpers, named after
+the board. Excalidraw's fonts are copied into `public/excalidraw/` by
+`npm run assets` (wired into `predev`/`prebuild`) instead of being fetched from
+a CDN, so a classroom with a flaky network still renders correctly.
+
+### Configuration
+
+| Variable                   | Default              | What it does                        |
+| -------------------------- | -------------------- | ----------------------------------- |
+| `NEXT_PUBLIC_YJS_URL`      | `ws://localhost:1234`| Where the browser opens the socket  |
+| `YJS_PORT` / `YJS_HOST`    | `1234` / `0.0.0.0`   | Where the server listens            |
+| `YJS_SNAPSHOT_DEBOUNCE_MS` | `2000`               | Quiet time before a snapshot        |
+| `YJS_SNAPSHOT_HISTORY`     | `20`                 | Snapshots kept per board            |
+| `YJS_HEARTBEAT_MS`         | `20000`              | Participation heartbeat             |
+| `YJS_REAPER_MS`            | `60000`              | How often stale sessions are swept  |
+| `YJS_STALE_AFTER_SECONDS`  | `120`                | Silence before a session is closed  |
+
+`NEXT_PUBLIC_YJS_URL` is inlined into the client bundle at build time, so the
+production compose file passes it as a build argument as well as an env var.
+

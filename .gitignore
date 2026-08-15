@@ -42,3 +42,6 @@ yarn-error.log*
 
 # Local tooling caches
 .atl/
+
+# Excalidraw fonts, copied from node_modules by `npm run assets`
+/public/excalidraw/

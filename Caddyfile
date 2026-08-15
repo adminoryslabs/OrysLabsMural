@@ -9,15 +9,17 @@
 	encode zstd gzip
 
 	# ---------------------------------------------------------------------
-	# PHASE B: realtime Yjs websocket endpoint.
-	# Uncomment together with the `yjs` service in docker-compose.prod.yml.
-	# The client connects to wss://{$APP_DOMAIN}/yjs (NEXT_PUBLIC_YJS_URL).
-	# The cookie is forwarded, which is how the websocket server authenticates
-	# the handshake against the `mural_session` session cookie.
+	# Realtime Yjs websocket endpoint.
+	# The client connects to wss://{$APP_DOMAIN}/yjs/<boardId>, which is what
+	# NEXT_PUBLIC_YJS_URL plus the room name resolves to. Same origin, so the
+	# browser sends the `mural_session` cookie on the upgrade request, and Caddy
+	# forwards it: that cookie is how the websocket server authenticates the
+	# handshake. The path is passed through unchanged; the server reads the
+	# board id from the last segment.
 	# ---------------------------------------------------------------------
-	# handle /yjs* {
-	# 	reverse_proxy yjs:1234
-	# }
+	handle /yjs* {
+		reverse_proxy yjs:1234
+	}
 
 	handle {
 		reverse_proxy app:3000

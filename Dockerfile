@@ -13,6 +13,10 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# NEXT_PUBLIC_* values are inlined into the bundle at build time, so the public
+# websocket URL has to be known here, not only at runtime.
+ARG NEXT_PUBLIC_YJS_URL
+ENV NEXT_PUBLIC_YJS_URL=${NEXT_PUBLIC_YJS_URL}
 # The build never touches the database; a placeholder URL satisfies config loaders.
 ENV DATABASE_URL=postgres://build:build@localhost:5432/build
 RUN npm run build
@@ -28,6 +32,22 @@ COPY drizzle ./drizzle
 COPY lib ./lib
 COPY scripts ./scripts
 CMD ["npx", "tsx", "scripts/migrate.ts"]
+
+# --- Collaboration (Yjs websocket) server ------------------------------------
+# A separate long-lived process. It shares `lib/` with the app on purpose: the
+# board authority rules and the session validation exist exactly once, so the
+# websocket server can never drift from what the web app enforces. That shared
+# code is why the build context is the repository root rather than ./yjs-server.
+FROM node:22-bookworm-slim AS yjs
+WORKDIR /app
+ENV NODE_ENV=production
+ENV YJS_PORT=1234
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json tsconfig.json ./
+COPY lib ./lib
+COPY yjs-server ./yjs-server
+EXPOSE 1234
+CMD ["npx", "tsx", "yjs-server/index.ts"]
 
 # --- Application -------------------------------------------------------------
 FROM node:22-bookworm-slim AS runner
