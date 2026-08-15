@@ -1,0 +1,10 @@
+# Class roster for `npm run db:seed`.
+# Copy to scripts/roster.csv (gitignored) and edit.
+# Columns: display_name,email,role
+#   - email is optional; it is derived from the name plus
+#     SEED_STUDENT_EMAIL_DOMAIN when missing.
+#   - role is optional and defaults to "student".
+display_name,email,role
+Ana Torres,ana.torres@example.com,student
+Bruno Diaz,bruno.diaz@example.com,student
+Carla Mendez,,student

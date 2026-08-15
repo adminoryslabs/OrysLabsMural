@@ -21,7 +21,6 @@ export function createRawClient(connectionString: string, max = 1) {
 
 declare global {
   // Reused across hot reloads in development so we do not leak pools.
-  // eslint-disable-next-line no-var
   var __muralDb: Database | undefined;
 }
 
