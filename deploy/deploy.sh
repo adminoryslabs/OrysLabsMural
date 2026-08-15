@@ -16,8 +16,11 @@ export IMAGE_TAG
 docker login ghcr.io -u "$ACTOR" --password-stdin
 trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 
+# Not --quiet on purpose: a silent pull can leave the SSH connection with no
+# traffic for minutes, and something in the path between the runner and this
+# host drops it. The progress output is what keeps the pipe alive.
 echo "==> pulling $IMAGE_TAG"
-docker compose pull --quiet
+docker compose pull
 
 # One-shot, and it must succeed before anything serves traffic.
 echo "==> migrating"

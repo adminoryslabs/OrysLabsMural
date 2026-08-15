@@ -83,6 +83,15 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
 
+    env:
+      # A pull can go minutes without output. Without keepalives something
+      # between the runner and the VPS drops the connection mid-deploy.
+      SSH_OPTS: >-
+        -o ServerAliveInterval=15
+        -o ServerAliveCountMax=20
+        -o TCPKeepAlive=yes
+        -o ConnectTimeout=20
+
     steps:
       - uses: actions/checkout@v5
 
@@ -95,14 +104,14 @@ jobs:
 
       - name: Ship the compose file and the deploy script
         run: |
-          scp -i ~/.ssh/deploy_key deploy/docker-compose.yml deploy/deploy.sh \
+          scp $SSH_OPTS -i ~/.ssh/deploy_key deploy/docker-compose.yml deploy/deploy.sh \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/apps/mural/"
 
       - name: Deploy
         run: |
           # STDIN carries the registry token, so the deploy script has to be a
           # file on the server rather than a heredoc — the two cannot share it.
-          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | ssh -i ~/.ssh/deploy_key \
+          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | ssh $SSH_OPTS -i ~/.ssh/deploy_key \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
             "IMAGE_TAG='${{ github.sha }}' ACTOR='${{ github.actor }}' bash /opt/apps/mural/deploy.sh"
 
