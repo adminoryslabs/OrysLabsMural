@@ -1,10 +1,11 @@
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   boardSessions,
   boards,
   users,
   type BoardSession,
+  type UserRole,
 } from "@/lib/db/schema";
 
 /**
@@ -243,6 +244,70 @@ export async function getBoardParticipation(
     .orderBy(users.displayName);
 
   return rows.map(normalizeRow);
+}
+
+export interface OnlineParticipant {
+  boardId: string;
+  userId: string;
+  displayName: string;
+  role: UserRole;
+}
+
+/**
+ * WHO IS ON A BOARD RIGHT NOW, for every board, in one query.
+ *
+ * "Online" is an open session (`disconnected_at is null`) whose heartbeat is
+ * still recent. Both halves matter: a tab that died without a clean close
+ * leaves its row open forever, so trusting `disconnected_at` alone would report
+ * a classroom full of students who went home. The freshness window should be
+ * the collaboration server's `YJS_STALE_AFTER_SECONDS`, which is when the
+ * reaper would have closed the row anyway.
+ *
+ * One user with two tabs is two rows and is deduplicated here, because the
+ * dashboard is answering "who is here", not "how many sockets are open".
+ */
+export async function listOnlineParticipants(
+  db: Database,
+  options: { staleAfterSeconds?: number; now?: Date } = {},
+): Promise<OnlineParticipant[]> {
+  const now = options.now ?? new Date();
+  const cutoff = new Date(
+    now.getTime() - (options.staleAfterSeconds ?? 120) * 1000,
+  );
+
+  const rows = await db
+    .selectDistinct({
+      boardId: boardSessions.boardId,
+      userId: boardSessions.userId,
+      displayName: users.displayName,
+      role: users.role,
+    })
+    .from(boardSessions)
+    .innerJoin(users, eq(users.id, boardSessions.userId))
+    .where(
+      and(
+        isNull(boardSessions.disconnectedAt),
+        gte(boardSessions.lastSeenAt, cutoff),
+      ),
+    )
+    .orderBy(users.displayName);
+
+  return rows;
+}
+
+/** Groups `listOnlineParticipants` by board, ready for a dashboard render. */
+export async function getOnlinePresenceByBoard(
+  db: Database,
+  options: { staleAfterSeconds?: number; now?: Date } = {},
+): Promise<Map<string, OnlineParticipant[]>> {
+  const rows = await listOnlineParticipants(db, options);
+  const byBoard = new Map<string, OnlineParticipant[]>();
+  for (const row of rows) {
+    const list = byBoard.get(row.boardId);
+    if (list) list.push(row);
+    else byBoard.set(row.boardId, [row]);
+  }
+  return byBoard;
 }
 
 /** Raw session rows for a board, newest first. Useful for a timeline view. */

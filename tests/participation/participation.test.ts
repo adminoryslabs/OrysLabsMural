@@ -5,6 +5,7 @@ import {
   closeStaleBoardSessions,
   endBoardSession,
   getBoardParticipation,
+  getOnlinePresenceByBoard,
   getUserParticipation,
   recordBoardActivity,
   startBoardSession,
@@ -265,5 +266,95 @@ describe("closeStaleBoardSessions", () => {
     const rows = await getBoardParticipation(testDb, boardA.id);
     expect(rows[0]!.openSessionCount).toBe(1);
     expect(stale.id).not.toBe(alive.id);
+  });
+});
+
+/**
+ * The dashboard reports these counts to the teacher during class, so they have
+ * to mean "here now" rather than "has a row that was never closed".
+ */
+describe("getOnlinePresenceByBoard", () => {
+  it("reports an open, heartbeating session as online on its own board", async () => {
+    const { student, boardA, boardB } = await seed();
+    const now = new Date("2026-01-01T10:00:00.000Z");
+    await startBoardSession(testDb, {
+      boardId: boardA.id,
+      userId: student.id,
+      now,
+    });
+
+    const presence = await getOnlinePresenceByBoard(testDb, {
+      staleAfterSeconds: 120,
+      now,
+    });
+
+    expect(presence.get(boardA.id)).toEqual([
+      {
+        boardId: boardA.id,
+        userId: student.id,
+        displayName: "Student One",
+        role: "student",
+      },
+    ]);
+    expect(presence.get(boardB.id)).toBeUndefined();
+  });
+
+  it("drops a session that was closed cleanly", async () => {
+    const { student, boardA } = await seed();
+    const now = new Date("2026-01-01T10:00:00.000Z");
+    const session = await startBoardSession(testDb, {
+      boardId: boardA.id,
+      userId: student.id,
+      now,
+    });
+    await endBoardSession(testDb, session.id, { now });
+
+    const presence = await getOnlinePresenceByBoard(testDb, {
+      staleAfterSeconds: 120,
+      now,
+    });
+
+    expect(presence.size).toBe(0);
+  });
+
+  it("drops an open session whose heartbeat went silent", async () => {
+    const { student, boardA } = await seed();
+    const t0 = new Date("2026-01-01T10:00:00.000Z");
+    await startBoardSession(testDb, {
+      boardId: boardA.id,
+      userId: student.id,
+      now: t0,
+    });
+
+    const presence = await getOnlinePresenceByBoard(testDb, {
+      staleAfterSeconds: 120,
+      now: new Date(t0.getTime() + 5 * MINUTE),
+    });
+
+    expect(presence.size).toBe(0);
+  });
+
+  it("counts a user with two tabs once", async () => {
+    const { student, boardA } = await seed();
+    const now = new Date("2026-01-01T10:00:00.000Z");
+    await startBoardSession(testDb, {
+      boardId: boardA.id,
+      userId: student.id,
+      connectionId: "tab-1",
+      now,
+    });
+    await startBoardSession(testDb, {
+      boardId: boardA.id,
+      userId: student.id,
+      connectionId: "tab-2",
+      now,
+    });
+
+    const presence = await getOnlinePresenceByBoard(testDb, {
+      staleAfterSeconds: 120,
+      now,
+    });
+
+    expect(presence.get(boardA.id)).toHaveLength(1);
   });
 });

@@ -98,6 +98,37 @@ export async function setBoardStatusAction(formData: FormData): Promise<void> {
   revalidatePath(`/boards/${parsed.data.boardId}`);
 }
 
+/**
+ * The dashboard's one-click state change.
+ *
+ * It differs from `setBoardStatusAction` only in how it reports failure: the
+ * dashboard reflects the new state optimistically, so a refusal has to come
+ * back as a value it can revert on rather than as a thrown error that replaces
+ * the whole screen. The authority itself is identical — re-authenticated,
+ * re-authorised, and validated against the database enum.
+ */
+export async function changeBoardStatusAction(
+  boardId: string,
+  status: string,
+): Promise<ActionState> {
+  const parsed = setStatusSchema.safeParse({ boardId, status });
+  if (!parsed.success) {
+    return { error: "That board state does not exist." };
+  }
+
+  try {
+    await authorizeBoardAdmin(parsed.data.boardId);
+    await setBoardStatus(db, parsed.data.boardId, parsed.data.status);
+  } catch {
+    return { error: "Could not change the board state. Try again." };
+  }
+
+  revalidatePath("/teacher");
+  revalidatePath(`/teacher/boards/${parsed.data.boardId}`);
+  revalidatePath(`/boards/${parsed.data.boardId}`);
+  return { message: "Board state changed." };
+}
+
 export async function deleteBoardAction(formData: FormData): Promise<void> {
   const parsed = z
     .object({ boardId: uuid })

@@ -236,21 +236,9 @@ export class BoardSession {
   }
 }
 
-/** Deterministic, readable cursor colour derived from the user id. */
-export function colorForUser(userId: string): string {
-  const palette = [
-    "#e11d48",
-    "#ea580c",
-    "#ca8a04",
-    "#16a34a",
-    "#0891b2",
-    "#2563eb",
-    "#7c3aed",
-    "#db2777",
-  ];
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
-  }
-  return palette[hash % palette.length] ?? "#2563eb";
-}
+/**
+ * Re-exported so existing importers keep working; the implementation moved to
+ * `peer-color.ts` because server components need it without this module's
+ * websocket dependencies.
+ */
+export { colorForUser } from "./peer-color";
