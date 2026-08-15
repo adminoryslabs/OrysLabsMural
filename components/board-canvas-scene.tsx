@@ -228,7 +228,9 @@ export function BoardCanvasScene({
 
     return () => {
       disposed = true;
-      observed?.unobserve(observer);
+      // `session.destroy()` closes the session, which invokes `onUnbind` and
+      // detaches the observer there. Unobserving here as well would take the
+      // same handler off twice and make Yjs warn about a handler that is gone.
       session.destroy();
       sessionRef.current = null;
       elementsRef.current = null;
