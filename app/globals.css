@@ -881,6 +881,23 @@ form.landing-form input[type="password"] {
   flex-shrink: 0;
 }
 
+/* The control keeps the bar exactly 56px tall, so its inline error hangs below
+   it instead of growing the row. */
+.state-control-wrap {
+  position: relative;
+  display: flex;
+}
+
+.state-control-wrap .state-error {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  white-space: nowrap;
+  background: var(--paper);
+  padding: 2px 4px;
+  z-index: 2;
+}
+
 .state-control {
   display: flex;
 }

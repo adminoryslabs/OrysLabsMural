@@ -20,7 +20,13 @@ import type {
 } from "@excalidraw/excalidraw/element/types";
 import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
 import type * as Y from "yjs";
-import { StatusBadge } from "@/components/status-badge";
+import { PresenceRow } from "@/components/avatar";
+import {
+  BoardSessionPanel,
+  BoardStateNote,
+  BoardTopBar,
+  type RosterEntry,
+} from "@/components/board-chrome";
 import type { BoardStatus } from "@/lib/db/schema";
 import {
   BoardSession,
@@ -62,6 +68,19 @@ const CURSOR_THROTTLE_MS = 50;
  */
 const BROADCAST_THROTTLE_MS = 80;
 
+/** How long after an edit a peer still reads as "Editing" in the roster. */
+const EDITING_WINDOW_MS = 5000;
+
+/** Repaint cadence for the two things that age: "Editing" and "saved Ns ago". */
+const CLOCK_TICK_MS = 2000;
+
+const PANEL_STORAGE_KEY = "mural.panelOpen";
+
+export interface BoardMember {
+  userId: string;
+  displayName: string;
+}
+
 export interface BoardCanvasProps {
   boardId: string;
   /**
@@ -72,7 +91,11 @@ export interface BoardCanvasProps {
    */
   canWrite: boolean;
   status: BoardStatus;
+  /** Whether to offer the state control. The server re-authorises the change. */
+  canAdminister: boolean;
   user: { id: string; displayName: string };
+  /** Everyone assigned to this board, so the roster can show who is missing. */
+  members: readonly BoardMember[];
   /** Websocket base url, `NEXT_PUBLIC_YJS_URL`. */
   serverUrl: string;
   boardTitle: string;
@@ -96,11 +119,21 @@ function slugify(value: string): string {
   );
 }
 
+function agoLabel(since: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - since) / 1000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes}m ago`;
+}
+
 export function BoardCanvasScene({
   boardId,
   canWrite,
   status,
+  canAdminister,
   user,
+  members,
   serverUrl,
   boardTitle,
 }: BoardCanvasProps) {
@@ -110,6 +143,11 @@ export function BoardCanvasScene({
   const [peers, setPeers] = useState<Peer[]>([]);
   const [refusedReason, setRefusedReason] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
+  /** Last time the document changed, local or remote. Drives "saved Ns ago". */
+  const [lastChangeAt, setLastChangeAt] = useState<number | null>(null);
+  /** Ticks so "Editing" and "saved Ns ago" age without a document event. */
+  const [clock, setClock] = useState(() => Date.now());
   /**
    * The live answer from the collaboration server, seeded with what the page
    * was rendered with. Every later value is pushed by the server.
@@ -198,6 +236,7 @@ export function BoardCanvasScene({
       transaction: Y.Transaction,
     ) => {
       if (transaction.origin === LOCAL_ORIGIN) return;
+      setLastChangeAt(Date.now());
       applyRemote();
     };
 
@@ -304,6 +343,11 @@ export function BoardCanvasScene({
         shared.set(element.id, element);
       }
     }, LOCAL_ORIGIN);
+
+    // Presence, not authority: it only decides whether the roster says
+    // "Editing" next to this person's name on the other screens.
+    sessionRef.current?.markEditing();
+    setLastChangeAt(Date.now());
   }, []);
 
   const handleChange = useCallback(() => {
@@ -327,6 +371,24 @@ export function BoardCanvasScene({
   useEffect(() => {
     if (api) applyRemote();
   }, [api, applyRemote]);
+
+  // Two labels age on their own: keep a slow clock rather than a timer each.
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(PANEL_STORAGE_KEY);
+    if (stored === "closed") setPanelOpen(false);
+  }, []);
+
+  const togglePanel = useCallback(() => {
+    setPanelOpen((open) => {
+      window.localStorage.setItem(PANEL_STORAGE_KEY, open ? "closed" : "open");
+      return !open;
+    });
+  }, []);
 
   const handlePointerUpdate = useCallback(
     (payload: { pointer: { x: number; y: number } }) => {
@@ -385,99 +447,142 @@ export function BoardCanvasScene({
 
   const readOnly = !authority.canWrite || refusedReason !== null;
 
+  /**
+   * The roster: every board member, plus anyone connected who is not one (a
+   * supervising teacher), plus this user. Online first, then by name.
+   */
+  const roster = useMemo<RosterEntry[]>(() => {
+    const byId = new Map<string, RosterEntry>();
+
+    for (const member of members) {
+      byId.set(member.userId, {
+        userId: member.userId,
+        displayName: member.displayName,
+        online: false,
+        editing: false,
+        isSelf: member.userId === user.id,
+      });
+    }
+
+    byId.set(user.id, {
+      userId: user.id,
+      displayName: user.displayName,
+      online: connection === "connected",
+      editing:
+        lastChangeAt !== null && clock - lastChangeAt < EDITING_WINDOW_MS,
+      isSelf: true,
+    });
+
+    for (const peer of peers) {
+      const existing = byId.get(peer.id);
+      byId.set(peer.id, {
+        userId: peer.id,
+        displayName: existing?.displayName ?? peer.name,
+        online: true,
+        editing:
+          peer.editingAt !== null && clock - peer.editingAt < EDITING_WINDOW_MS,
+        isSelf: false,
+      });
+    }
+
+    return [...byId.values()].sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+  }, [members, peers, user.id, user.displayName, connection, lastChangeAt, clock]);
+
+  const onlinePeople = roster.filter((entry) => entry.online);
+
+  const connectionLabel =
+    connection !== "connected"
+      ? "Reconnecting…"
+      : !synced
+        ? "Syncing…"
+        : `${authority.status === "frozen" ? "Frozen" : "Live"} · ${
+            lastChangeAt === null
+              ? "up to date"
+              : `saved ${agoLabel(lastChangeAt, clock)}`
+          }`;
+
+  const connectionDotClass =
+    connection !== "connected"
+      ? "board-conn-dot board-conn-dot-offline"
+      : authority.status === "frozen"
+        ? "board-conn-dot board-conn-dot-frozen"
+        : "board-conn-dot";
+
   return (
-    <section className="board-canvas">
-      <header className="board-canvas-bar">
-        <span
-          className={`board-connection board-connection-${connection}`}
-          title={`Websocket ${connection}`}
-        >
-          {connection === "connected"
-            ? synced
-              ? "Live"
-              : "Syncing…"
-            : connection === "connecting"
-              ? "Connecting…"
-              : "Offline"}
-        </span>
+    <div className="board-screen">
+      <BoardTopBar
+        boardId={boardId}
+        title={boardTitle}
+        // Live: the status the collaboration server last stated, not the one
+        // the page was rendered with.
+        status={authority.status}
+        canAdminister={canAdminister}
+        backHref={canAdminister ? "/teacher" : "/boards"}
+        panelOpen={panelOpen}
+        onTogglePanel={togglePanel}
+        presence={
+          <PresenceRow
+            people={onlinePeople}
+            max={4}
+            label={`${onlinePeople.length} of ${roster.length} here`}
+          />
+        }
+      />
 
-        {/* Live: this is the status the collaboration server last stated, not
-            the one the page was rendered with. */}
-        <StatusBadge status={authority.status} />
+      <BoardStateNote
+        status={authority.status}
+        canAdminister={canAdminister}
+      />
 
-        <span className="board-presence">
-          {peers.length === 0
-            ? "You are the only one here"
-            : `${peers.length + 1} people on this board`}
-        </span>
+      <div className="board-body">
+        <div className="board-canvas-surface">
+          <div className="excalidraw-host">
+            <Excalidraw
+              excalidrawAPI={setApi}
+              onChange={handleChange}
+              onPointerUpdate={handlePointerUpdate}
+              viewModeEnabled={readOnly}
+              isCollaborating
+              name={boardTitle}
+              UIOptions={{
+                canvasActions: {
+                  loadScene: false,
+                  saveToActiveFile: false,
+                  // Export goes through our own buttons so the filename matches
+                  // the board and both formats behave identically.
+                  export: false,
+                  toggleTheme: true,
+                },
+              }}
+            />
+          </div>
 
-        <ul className="board-peers">
-          {peers.map((peer) => (
-            <li key={peer.clientId} className="board-peer">
-              <span
-                className="board-peer-dot"
-                style={{ backgroundColor: peer.color }}
-                aria-hidden="true"
-              />
-              {peer.name}
-            </li>
-          ))}
-        </ul>
+          {refusedReason ? (
+            <p className="board-refused" role="status">
+              The server refused your last change: this board is now{" "}
+              <strong>{refusedReason}</strong>. The board was reloaded from the
+              server, so your change was not saved.
+            </p>
+          ) : null}
 
-        <span className="board-canvas-actions">
-          <button
-            type="button"
-            onClick={() => void exportScene("png")}
-            disabled={exporting}
-          >
-            Export PNG
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportScene("svg")}
-            disabled={exporting}
-          >
-            Export SVG
-          </button>
-        </span>
-      </header>
+          <div className="board-conn">
+            <span className={connectionDotClass} aria-hidden="true" />
+            <span>{connectionLabel}</span>
+          </div>
+        </div>
 
-      {refusedReason ? (
-        <p className="board-canvas-refused" role="status">
-          The server refused your last change: this board is now{" "}
-          <strong>{refusedReason}</strong>. The board was reloaded from the
-          server, so your change was not saved.
-        </p>
-      ) : null}
-
-      <div className="board-canvas-surface">
-        <Excalidraw
-          excalidrawAPI={setApi}
-          onChange={handleChange}
-          onPointerUpdate={handlePointerUpdate}
-          viewModeEnabled={readOnly}
-          isCollaborating
-          name={boardTitle}
-          UIOptions={{
-            canvasActions: {
-              loadScene: false,
-              saveToActiveFile: false,
-              // Export goes through our own buttons so the filename matches
-              // the board and both formats behave identically.
-              export: false,
-              toggleTheme: true,
-            },
-          }}
-        />
+        {panelOpen ? (
+          <BoardSessionPanel
+            entries={roster}
+            status={authority.status}
+            onExport={(format) => void exportScene(format)}
+            exporting={exporting}
+          />
+        ) : null}
       </div>
-
-      {!authority.canWrite ? (
-        <p className="muted board-canvas-note" role="status">
-          {authority.status === "frozen"
-            ? "This board is frozen. Nobody can edit it, the teacher included."
-            : "This board is read only for you. You can watch and export it."}
-        </p>
-      ) : null}
-    </section>
+    </div>
   );
 }
