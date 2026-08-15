@@ -11,7 +11,7 @@ export default async function MyBoardsPage() {
   const boards = await listBoardsForUser(db, user.id);
 
   return (
-    <main className="container">
+    <main className="app-main container">
       <h1>My boards</h1>
 
       {boards.length === 0 ? (

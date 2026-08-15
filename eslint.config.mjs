@@ -14,6 +14,9 @@ const eslintConfig = [
       ".next/**",
       "drizzle/**",
       "next-env.d.ts",
+      // Design references, not source: HTML prototypes plus the runtime they
+      // need to open in a browser. Present only while the redesign is in hand.
+      "design_handoff_mural_ui/**",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),

@@ -23,7 +23,7 @@ export default async function BoardPage({
   }
 
   return (
-    <main className="container board-page">
+    <main className="app-main container">
       <h1>{access.board.title}</h1>
 
       {/*

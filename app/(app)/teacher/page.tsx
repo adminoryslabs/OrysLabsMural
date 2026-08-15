@@ -14,7 +14,7 @@ export default async function TeacherPanelPage() {
   const boards = await listBoardsForTeacher(db);
 
   return (
-    <main className="container">
+    <main className="app-main container">
       <h1>Teacher panel</h1>
 
       <div className="card">

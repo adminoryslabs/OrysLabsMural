@@ -47,7 +47,8 @@ export default async function ManageBoardPage({
   const candidates = allUsers.filter((user) => !memberIds.has(user.id));
 
   return (
-    <main className="container">
+    <main className="app-main">
+      <div className="container">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1>{board.title}</h1>
         <StatusBadge status={board.status} />
@@ -175,6 +176,7 @@ export default async function ManageBoardPage({
             </tbody>
           </table>
         )}
+      </div>
       </div>
     </main>
   );

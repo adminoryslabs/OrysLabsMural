@@ -10,8 +10,9 @@ export default async function UsersPage() {
   const users = await listUsers(db);
 
   return (
-    <main className="container">
-      <h1>Users</h1>
+    <main className="app-main">
+      <div className="container">
+      <h1>Students</h1>
       <p className="muted">
         There is no public registration. Accounts are created here or by the
         seed script.
@@ -46,6 +47,7 @@ export default async function UsersPage() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </main>
   );

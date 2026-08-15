@@ -1,8 +1,28 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/login/actions";
+import { LogoutIcon } from "@/components/icons";
 import { requireUser } from "@/lib/auth/current-user";
+import { NavLinks, type NavLink } from "./nav-links";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Role decides the navigation, and every destination here is a route that
+ * exists: a link that 404s in front of a class is worse than a missing one.
+ */
+function navigationFor(role: "teacher" | "student"): NavLink[] {
+  if (role === "teacher") {
+    return [
+      { href: "/teacher", label: "Boards", match: "/teacher" },
+      { href: "/teacher/users", label: "Students", match: "/teacher/users" },
+      { href: "/participation", label: "Participation", match: "/participation" },
+    ];
+  }
+  return [
+    { href: "/boards", label: "Boards", match: "/boards" },
+    { href: "/participation", label: "Participation", match: "/participation" },
+  ];
+}
 
 export default async function AuthenticatedLayout({
   children,
@@ -10,30 +30,26 @@ export default async function AuthenticatedLayout({
   const user = await requireUser();
 
   return (
-    <>
-      <header className="app-header">
-        <nav>
-          <Link className="brand" href="/">
-            OrysLabs Mural
-          </Link>
-          <Link href="/boards">My boards</Link>
-          {user.role === "teacher" ? (
-            <>
-              <Link href="/teacher">Teacher panel</Link>
-              <Link href="/teacher/users">Users</Link>
-            </>
-          ) : null}
-        </nav>
-        <div className="row">
-          <span className="muted">
-            {user.displayName} ({user.role})
-          </span>
+    <div className="app-shell">
+      <header className="app-nav">
+        <Link className="app-nav-brand" href="/">
+          <span className="brand-mark" aria-hidden="true" />
+          <span className="wordmark">OrysLabs Mural</span>
+        </Link>
+
+        <NavLinks links={navigationFor(user.role)} />
+
+        <div className="app-nav-user">
+          <span className="app-nav-name">{user.displayName}</span>
           <form action={logoutAction}>
-            <button type="submit">Log out</button>
+            <button className="btn-icon" type="submit" title="Log out">
+              <LogoutIcon size={19} />
+              <span className="sr-only">Log out</span>
+            </button>
           </form>
         </div>
       </header>
       {children}
-    </>
+    </div>
   );
 }
