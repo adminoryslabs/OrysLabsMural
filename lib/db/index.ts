@@ -20,19 +20,28 @@ export function createRawClient(connectionString: string, max = 1) {
 }
 
 declare global {
-  // Reused across hot reloads in development so we do not leak pools.
+  // Reused across hot reloads in development, and across every access to `db`
+  // in every environment.
   var __muralDb: Database | undefined;
 }
 
+/**
+ * Resolves the one connection pool this process owns.
+ *
+ * It MUST be cached. The `db` proxy below calls this on every property access,
+ * so returning a fresh `createDatabase()` opens another pool of `max` sockets
+ * each time. Production used to do exactly that and exhausted PostgreSQL's 100
+ * connection slots; the failure surfaced as
+ * `remaining connection slots are reserved for roles with the SUPERUSER
+ * attribute`, far away from the cause. Development never showed it because the
+ * cache below was the development-only branch.
+ */
 function resolveDatabase(): Database {
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error(
       "DATABASE_URL is not set. Copy env.example to .env and start Postgres with `docker compose up -d`.",
     );
-  }
-  if (process.env.NODE_ENV === "production") {
-    return createDatabase(url);
   }
   globalThis.__muralDb ??= createDatabase(url);
   return globalThis.__muralDb;
