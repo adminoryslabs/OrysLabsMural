@@ -1,0 +1,41 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+/dist
+
+# testing
+/coverage
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (secrets)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# seed output (contains generated plaintext credentials)
+/seed-credentials.csv
+/scripts/roster.csv
+
+# editors
+.idea/
+.vscode/
