@@ -1,6 +1,9 @@
 import { cookies } from "next/headers";
+import { SESSION_COOKIE_NAME } from "./session-cookie";
 
-export const SESSION_COOKIE_NAME = "mural_session";
+// The name itself lives in the framework-free module so the Yjs websocket
+// server can share it without dragging `next/headers` into a plain Node process.
+export { SESSION_COOKIE_NAME };
 
 function secureCookies(): boolean {
   if (process.env.COOKIE_SECURE) {

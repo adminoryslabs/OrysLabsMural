@@ -19,12 +19,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
     "@node-rs/argon2": "2.1.0",
     "drizzle-orm": "0.45.2",
+    "lib0": "0.2.117",
     "next": "15.5.23",
     "postgres": "3.4.9",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "ws": "8.21.3",
+    "y-protocols": "1.0.7",
+    "y-websocket": "3.1.0",
+    "yjs": "13.6.32",
     "zod": "3.25.76"
   },
   "devDependencies": {
@@ -32,6 +38,7 @@
     "@types/node": "22.20.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/ws": "8.18.1",
     "dotenv": "17.4.2",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.1",

@@ -39,3 +39,6 @@ yarn-error.log*
 # editors
 .idea/
 .vscode/
+
+# Local tooling caches
+.atl/
