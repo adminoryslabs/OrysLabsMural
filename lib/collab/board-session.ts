@@ -42,6 +42,12 @@ export interface Peer {
   name: string;
   color: string;
   cursor: { x: number; y: number } | null;
+  /**
+   * When this peer last said it edited the document, as its own clock. Presence,
+   * not authority: a client that claims to be editing gains nothing by it, and
+   * the roster only uses it to label a row "Editing".
+   */
+  editingAt: number | null;
 }
 
 export interface BoardSessionOptions {
@@ -196,6 +202,15 @@ export class BoardSession {
     this.options.onAuthority?.(state);
   }
 
+  /**
+   * Announces that this user just changed the document, so the others can show
+   * them as editing. Awareness only - the server neither reads nor trusts it.
+   */
+  markEditing(now: number = Date.now()): void {
+    if (this.destroyed) return;
+    this.provider.awareness.setLocalStateField("editingAt", now);
+  }
+
   /** Publishes this user's pointer so the others can see it. */
   setCursor(cursor: { x: number; y: number } | null): void {
     if (this.destroyed) return;
@@ -213,12 +228,14 @@ export class BoardSession {
       if (!user?.id) continue;
       const cursor = (state as { cursor?: { x: number; y: number } | null })
         .cursor;
+      const editingAt = (state as { editingAt?: number }).editingAt;
       peers.push({
         clientId,
         id: user.id,
         name: user.name ?? "Someone",
         color: user.color ?? "#64748b",
         cursor: cursor ?? null,
+        editingAt: typeof editingAt === "number" ? editingAt : null,
       });
     }
 
@@ -236,21 +253,9 @@ export class BoardSession {
   }
 }
 
-/** Deterministic, readable cursor colour derived from the user id. */
-export function colorForUser(userId: string): string {
-  const palette = [
-    "#e11d48",
-    "#ea580c",
-    "#ca8a04",
-    "#16a34a",
-    "#0891b2",
-    "#2563eb",
-    "#7c3aed",
-    "#db2777",
-  ];
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
-  }
-  return palette[hash % palette.length] ?? "#2563eb";
-}
+/**
+ * Re-exported so existing importers keep working; the implementation moved to
+ * `peer-color.ts` because server components need it without this module's
+ * websocket dependencies.
+ */
+export { colorForUser } from "./peer-color";

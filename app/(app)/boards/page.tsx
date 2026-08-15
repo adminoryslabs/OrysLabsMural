@@ -1,54 +1,59 @@
-import Link from "next/link";
+import { BoardCard, type BoardCardData } from "@/components/board-card";
 import { requireUser } from "@/lib/auth/current-user";
 import { listBoardsForUser } from "@/lib/boards/queries";
 import { db } from "@/lib/db";
-import { StatusBadge } from "@/components/status-badge";
+import { formatUpdated } from "@/lib/format";
+import { getOnlinePresenceByBoard } from "@/lib/participation/queries";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * A student's own boards. Same card as the teacher's dashboard, without the
+ * state control: changing a board's state is not theirs to do, and rendering a
+ * button they cannot use would only invite them to try.
+ */
 export default async function MyBoardsPage() {
   const user = await requireUser();
-  const boards = await listBoardsForUser(db, user.id);
+  const [boards, presence] = await Promise.all([
+    listBoardsForUser(db, user.id),
+    getOnlinePresenceByBoard(db),
+  ]);
+
+  const now = new Date();
+  const cards: BoardCardData[] = boards.map((board) => ({
+    id: board.id,
+    title: board.title,
+    href: `/boards/${board.id}`,
+    updated: formatUpdated(board.updatedAt, now),
+    status: board.status,
+    online: presence.get(board.id) ?? [],
+  }));
 
   return (
-    <main className="container">
-      <h1>My boards</h1>
+    <main className="app-main">
+      <div className="container">
+        <div className="page-head">
+          <div>
+            <h1>Boards</h1>
+            <p className="page-subline">
+              The boards your instructor has put you on.
+            </p>
+          </div>
+        </div>
 
-      {boards.length === 0 ? (
-        <div className="card">
-          <p className="muted">
+        {cards.length === 0 ? (
+          <p className="empty-line">
             You have not been assigned to any board yet. Your instructor will
             add you to one.
           </p>
-        </div>
-      ) : (
-        <div className="card">
-          <table>
-            <thead>
-              <tr>
-                <th>Board</th>
-                <th>Status</th>
-                <th>Last updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {boards.map((board) => (
-                <tr key={board.id}>
-                  <td>
-                    <Link href={`/boards/${board.id}`}>{board.title}</Link>
-                  </td>
-                  <td>
-                    <StatusBadge status={board.status} />
-                  </td>
-                  <td className="muted">
-                    {board.updatedAt.toISOString().slice(0, 16).replace("T", " ")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        ) : (
+          <div className="board-grid">
+            {cards.map((board) => (
+              <BoardCard key={board.id} board={board} />
+            ))}
+          </div>
+        )}
+      </div>
     </main>
   );
 }

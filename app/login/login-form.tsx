@@ -2,13 +2,15 @@
 
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import { ArrowForwardIcon } from "@/components/icons";
 import { loginAction, type LoginFormState } from "./actions";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <button className="primary" type="submit" disabled={pending}>
-      {pending ? "Signing in..." : "Sign in"}
+    <button className="btn-solid" type="submit" disabled={pending}>
+      {pending ? "Signing in…" : "Sign in"}
+      {pending ? null : <ArrowForwardIcon size={18} />}
     </button>
   );
 }
@@ -20,15 +22,16 @@ export function LoginForm({ next }: { next?: string }) {
   );
 
   return (
-    <form action={formAction}>
+    <form className="landing-form" action={formAction}>
+      <h2>Sign in</h2>
       {next ? <input type="hidden" name="next" value={next} /> : null}
-      {state.error ? <p className="error">{state.error}</p> : null}
 
       <label htmlFor="email">Email</label>
       <input
         id="email"
         name="email"
         type="email"
+        placeholder="ada@oryslabs.com"
         autoComplete="username"
         required
       />
@@ -38,11 +41,24 @@ export function LoginForm({ next }: { next?: string }) {
         id="password"
         name="password"
         type="password"
+        placeholder="••••••••••"
         autoComplete="current-password"
         required
       />
 
+      {/* The failure belongs next to the control that produced it. */}
+      {state.error ? (
+        <p className="error" role="alert">
+          {state.error}
+        </p>
+      ) : null}
+
       <SubmitButton />
+
+      <p className="landing-footnote">
+        Accounts are created by your instructor. There is no public sign-up —
+        ask in class if you do not have one.
+      </p>
     </form>
   );
 }

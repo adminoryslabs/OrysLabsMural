@@ -159,6 +159,16 @@ helpers are in `lib/participation/queries.ts`
 already renders the per-board table; a full analytics dashboard is out of scope
 for Phase A but needs no migration.
 
+### Fonts and icons
+
+The interface uses Space Grotesk and Inter. Both are vendored as woff2 into
+`public/fonts/` and declared in `app/globals.css`, never fetched from Google —
+same reason Excalidraw's fonts live in `public/excalidraw/`. Icons are inline
+SVG in `components/icons.tsx`, so there is no icon font to load either. The
+middleware matcher excludes font extensions on purpose: the landing page is the
+one screen an anonymous visitor sees, and redirecting its typeface to `/login`
+would render it in the fallback stack.
+
 ## Layout
 
 ```

@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { boardStatus } from "@/lib/db/schema";
 import {
   addBoardMembersAction,
+  deleteBoardAction,
   removeBoardMemberAction,
   removeBoardMembersAction,
   setBoardStatusAction,
@@ -31,7 +32,7 @@ export default async function ManageBoardPage({
 }: {
   params: Promise<{ boardId: string }>;
 }) {
-  await requireTeacher();
+  const teacher = await requireTeacher();
   const { boardId } = await params;
 
   const board = await getBoardById(db, boardId);
@@ -47,7 +48,8 @@ export default async function ManageBoardPage({
   const candidates = allUsers.filter((user) => !memberIds.has(user.id));
 
   return (
-    <main className="container">
+    <main className="app-main">
+      <div className="container">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1>{board.title}</h1>
         <StatusBadge status={board.status} />
@@ -80,6 +82,22 @@ export default async function ManageBoardPage({
           ))}
         </div>
       </div>
+
+      {board.ownerId === teacher.id ? (
+        <div className="card">
+          <h2>Delete this board</h2>
+          <p className="muted">
+            Deleting removes the document, the membership and the participation
+            log. Only the teacher who owns the board can do it.
+          </p>
+          <form action={deleteBoardAction}>
+            <input type="hidden" name="boardId" value={board.id} />
+            <button className="danger" type="submit">
+              Delete board
+            </button>
+          </form>
+        </div>
+      ) : null}
 
       <div className="card">
         <h2>Assign students ({candidates.length} available)</h2>
@@ -175,6 +193,7 @@ export default async function ManageBoardPage({
             </tbody>
           </table>
         )}
+      </div>
       </div>
     </main>
   );

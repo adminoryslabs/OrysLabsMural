@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { BoardCanvas } from "@/components/board-canvas";
 import { requireUser } from "@/lib/auth/current-user";
-import { getBoardAccess } from "@/lib/boards/queries";
+import { canAdministerBoard } from "@/lib/boards/authority";
+import { getBoardAccess, listBoardMembers } from "@/lib/boards/queries";
 import { yjsServerUrl } from "@/lib/collab/config";
 import { db } from "@/lib/db";
 
@@ -22,22 +23,30 @@ export default async function BoardPage({
     notFound();
   }
 
-  return (
-    <main className="container board-page">
-      <h1>{access.board.title}</h1>
+  const members = await listBoardMembers(db, access.board.id);
 
+  return (
+    <main className="app-main-fixed">
       {/*
-        The status and the "read only" notice deliberately live INSIDE the
-        canvas, next to the live connection indicator. Rendering them here as
-        well would freeze them at page-render time, which is exactly the stale
-        state the collaboration server now pushes past.
+        The status, the state control and the "read only" notice deliberately
+        live INSIDE the canvas component, next to the live connection indicator.
+        Rendering them here as well would freeze them at page-render time, which
+        is exactly the stale state the collaboration server pushes past.
       */}
       <BoardCanvas
         boardId={access.board.id}
         boardTitle={access.board.title}
         canWrite={access.canWrite}
         status={access.board.status}
+        canAdminister={canAdministerBoard({
+          board: access.board,
+          user: { id: user.id, role: access.role },
+        })}
         user={{ id: user.id, displayName: user.displayName }}
+        members={members.map((member) => ({
+          userId: member.id,
+          displayName: member.displayName,
+        }))}
         serverUrl={yjsServerUrl()}
       />
     </main>
