@@ -118,6 +118,45 @@ export async function addBoardMember(
     .onConflictDoNothing();
 }
 
+/**
+ * Adds several members in one statement. Returns the ids that were actually
+ * inserted: Postgres reports nothing for a row that hit the conflict, so the
+ * caller learns who was already a member without a second read-then-write that
+ * two teachers could interleave.
+ */
+export async function addBoardMembers(
+  db: Database,
+  boardId: string,
+  userIds: readonly string[],
+): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const inserted = await db
+    .insert(boardMembers)
+    .values(userIds.map((userId) => ({ boardId, userId })))
+    .onConflictDoNothing()
+    .returning({ userId: boardMembers.userId });
+  return inserted.map((row) => row.userId);
+}
+
+/** Removes several members in one statement, returning who was really removed. */
+export async function removeBoardMembers(
+  db: Database,
+  boardId: string,
+  userIds: readonly string[],
+): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const deleted = await db
+    .delete(boardMembers)
+    .where(
+      and(
+        eq(boardMembers.boardId, boardId),
+        inArray(boardMembers.userId, [...userIds]),
+      ),
+    )
+    .returning({ userId: boardMembers.userId });
+  return deleted.map((row) => row.userId);
+}
+
 export async function removeBoardMember(
   db: Database,
   boardId: string,

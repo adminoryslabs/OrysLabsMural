@@ -124,6 +124,25 @@ status are always read from the database first (`getBoardAccess`), and every
 server action re-authorises through `requireTeacher()` — a rendered button is
 not permission.
 
+### Assigning a class
+
+Membership is edited in batches, because a dropdown per student is unusable in
+front of a class: tick as many people as you like, and/or paste the roster
+(newlines, commas and semicolons all work). Adding and removing behave the same
+way.
+
+A batch never fails as a whole. Every input is classified and reported back —
+added, already a member, unknown address — so one typo costs one student, not
+the class. The rules live in `lib/boards/membership.ts`; the insert is a single
+`on conflict do nothing … returning`, so "who was already a member" is answered
+by Postgres rather than by a read-then-write two teachers could interleave.
+
+Authorisation is not the form's business: the server action re-authenticates
+with `requireTeacher()`, and the batch functions then load the board and the
+actor's role from the database and run `canAdministerBoard` again for
+themselves. Selections that are not even shaped like a uuid are dropped before
+they reach SQL.
+
 ### Attribution
 
 `board_sessions` answers "which boards did student X take part in, and how

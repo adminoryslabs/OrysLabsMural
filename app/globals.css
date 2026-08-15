@@ -322,3 +322,48 @@ th {
 .board-canvas-note {
   margin: 0;
 }
+
+/* Batch membership: a class-sized list has to stay scannable and scrollable. */
+.batch-controls {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.batch-controls input[type="search"] {
+  flex: 1;
+}
+
+.batch-picker {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.batch-picker label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.batch-picker label:hover {
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+.batch-paste {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.batch-paste textarea {
+  width: 100%;
+  font-family: inherit;
+  margin-top: 4px;
+}

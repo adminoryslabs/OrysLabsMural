@@ -10,7 +10,15 @@ import {
   canDeleteBoard,
 } from "@/lib/boards/authority";
 import {
-  addBoardMember,
+  MAX_BATCH_SIZE,
+  MembershipAuthorizationError,
+  addBoardMembersBatch,
+  describeBatchResult,
+  parseEmailList,
+  removeBoardMembersBatch,
+  type MembershipBatchResult,
+} from "@/lib/boards/membership";
+import {
   createBoard,
   deleteBoard,
   getBoardById,
@@ -136,21 +144,6 @@ export async function renameBoardAction(formData: FormData): Promise<void> {
 
 const membershipSchema = z.object({ boardId: uuid, userId: uuid });
 
-export async function addBoardMemberAction(formData: FormData): Promise<void> {
-  const parsed = membershipSchema.safeParse({
-    boardId: formData.get("boardId"),
-    userId: formData.get("userId"),
-  });
-  if (!parsed.success) {
-    throw new Error("Invalid member.");
-  }
-
-  await authorizeBoardAdmin(parsed.data.boardId);
-  await addBoardMember(db, parsed.data.boardId, parsed.data.userId);
-  revalidatePath(`/teacher/boards/${parsed.data.boardId}`);
-  revalidatePath("/teacher");
-}
-
 export async function removeBoardMemberAction(
   formData: FormData,
 ): Promise<void> {
@@ -166,6 +159,118 @@ export async function removeBoardMemberAction(
   await removeBoardMember(db, parsed.data.boardId, parsed.data.userId);
   revalidatePath(`/teacher/boards/${parsed.data.boardId}`);
   revalidatePath("/teacher");
+}
+
+/**
+ * BATCH MEMBERSHIP.
+ *
+ * Adding twenty-five students one dropdown at a time is unusable in front of a
+ * class, so these take a multi-selection and/or a pasted list of addresses.
+ *
+ * Nothing here is trusted. `requireTeacher()` re-authenticates from the cookie,
+ * and the batch functions load the board and the actor's role from the database
+ * and run `canAdministerBoard` again for themselves. Ids that are not even
+ * shaped like a uuid are dropped before they can reach SQL, and reported.
+ */
+const batchSchema = z.object({
+  boardId: uuid,
+  userIds: z.array(z.string()).max(MAX_BATCH_SIZE),
+  emails: z.string().max(32_000),
+});
+
+function readBatchInput(formData: FormData) {
+  const parsed = batchSchema.safeParse({
+    boardId: formData.get("boardId"),
+    userIds: formData.getAll("userId").map(String),
+    emails: String(formData.get("emails") ?? ""),
+  });
+  if (!parsed.success) return null;
+
+  const userIds: string[] = [];
+  let malformed = 0;
+  for (const value of parsed.data.userIds) {
+    if (uuid.safeParse(value).success) userIds.push(value);
+    else malformed += 1;
+  }
+
+  return {
+    boardId: parsed.data.boardId,
+    userIds,
+    emails: parseEmailList(parsed.data.emails),
+    malformed,
+  };
+}
+
+function report(
+  result: MembershipBatchResult,
+  verb: "added" | "removed",
+  malformed: number,
+): ActionState {
+  const summary = describeBatchResult(result, verb);
+  return {
+    message:
+      malformed > 0
+        ? `${summary} · ${malformed} invalid selections ignored`
+        : summary,
+  };
+}
+
+export async function addBoardMembersAction(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const teacher = await requireTeacher();
+  const input = readBatchInput(formData);
+  if (!input) return { error: "Invalid selection." };
+  if (input.userIds.length === 0 && input.emails.length === 0) {
+    return { error: "Select at least one student, or paste some addresses." };
+  }
+
+  try {
+    const result = await addBoardMembersBatch(db, {
+      boardId: input.boardId,
+      actorId: teacher.id,
+      userIds: input.userIds,
+      emails: input.emails,
+    });
+    revalidatePath(`/teacher/boards/${input.boardId}`);
+    revalidatePath("/teacher");
+    return report(result, "added", input.malformed);
+  } catch (error) {
+    if (error instanceof MembershipAuthorizationError) {
+      return { error: error.message };
+    }
+    return { error: "Nobody could be added. Check the board and try again." };
+  }
+}
+
+export async function removeBoardMembersAction(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const teacher = await requireTeacher();
+  const input = readBatchInput(formData);
+  if (!input) return { error: "Invalid selection." };
+  if (input.userIds.length === 0 && input.emails.length === 0) {
+    return { error: "Select at least one member, or paste some addresses." };
+  }
+
+  try {
+    const result = await removeBoardMembersBatch(db, {
+      boardId: input.boardId,
+      actorId: teacher.id,
+      userIds: input.userIds,
+      emails: input.emails,
+    });
+    revalidatePath(`/teacher/boards/${input.boardId}`);
+    revalidatePath("/teacher");
+    return report(result, "removed", input.malformed);
+  } catch (error) {
+    if (error instanceof MembershipAuthorizationError) {
+      return { error: error.message };
+    }
+    return { error: "Nobody could be removed. Check the board and try again." };
+  }
 }
 
 const createUserSchema = z.object({

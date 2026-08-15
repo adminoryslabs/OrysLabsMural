@@ -11,10 +11,12 @@ import { getBoardParticipation } from "@/lib/participation/queries";
 import { db } from "@/lib/db";
 import { boardStatus } from "@/lib/db/schema";
 import {
-  addBoardMemberAction,
+  addBoardMembersAction,
   removeBoardMemberAction,
+  removeBoardMembersAction,
   setBoardStatusAction,
 } from "../../actions";
+import { BatchMembersForm } from "./batch-members-form";
 
 export const dynamic = "force-dynamic";
 
@@ -80,7 +82,33 @@ export default async function ManageBoardPage({
       </div>
 
       <div className="card">
+        <h2>Assign students ({candidates.length} available)</h2>
+        <p className="muted">
+          Tick as many as you like, or paste the roster. One unknown address
+          never costs the rest of the batch: every address is reported back.
+        </p>
+        <BatchMembersForm
+          boardId={board.id}
+          people={candidates}
+          action={addBoardMembersAction}
+          submitLabel="Add to the board"
+          emptyLabel="Every account is already a member."
+          pasteHint="Or paste emails, separated by commas or new lines:"
+        />
+      </div>
+
+      <div className="card">
         <h2>Members ({members.length})</h2>
+        {members.length > 0 ? (
+          <BatchMembersForm
+            boardId={board.id}
+            people={members}
+            action={removeBoardMembersAction}
+            submitLabel="Remove from the board"
+            emptyLabel="Nobody has been assigned yet."
+            pasteHint="Or paste the emails to remove:"
+          />
+        ) : null}
         {members.length === 0 ? (
           <p className="muted">Nobody has been assigned yet.</p>
         ) : (
@@ -110,27 +138,6 @@ export default async function ManageBoardPage({
               ))}
             </tbody>
           </table>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Assign a student</h2>
-        {candidates.length === 0 ? (
-          <p className="muted">Every account is already a member.</p>
-        ) : (
-          <form action={addBoardMemberAction} className="row">
-            <input type="hidden" name="boardId" value={board.id} />
-            <select name="userId" defaultValue={candidates[0]!.id}>
-              {candidates.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.displayName} ({user.email})
-                </option>
-              ))}
-            </select>
-            <button className="primary" type="submit">
-              Add member
-            </button>
-          </form>
         )}
       </div>
 
