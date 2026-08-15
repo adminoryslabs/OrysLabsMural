@@ -3,6 +3,11 @@ import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import * as authProtocol from "y-protocols/auth";
 import * as decoding from "lib0/decoding";
+import {
+  MESSAGE_BOARD_STATUS,
+  decodeBoardStatusPayload,
+  type BoardAuthorityState,
+} from "./status-frame";
 
 /**
  * The browser half of the collaboration link.
@@ -57,6 +62,13 @@ export interface BoardSessionOptions {
   onPeers?(peers: Peer[]): void;
   /** The server refused a write. `reason` is the board status it refused with. */
   onDenied?(reason: string): void;
+  /**
+   * The server stated this board's status and what this connection may do with
+   * it. Pushed on connect and again whenever a teacher changes the status, so
+   * the UI never has to be reloaded to catch up. Advisory only: the server
+   * enforces the rule for itself on every write.
+   */
+  onAuthority?(state: BoardAuthorityState): void;
   /** Node test harness injects a `ws` subclass that carries the cookie. */
   WebSocketPolyfill?: typeof WebSocket;
   /**
@@ -72,6 +84,11 @@ export class BoardSession {
   private provider!: WebsocketProvider;
   private destroyed = false;
   private lastDenialAt = 0;
+  /**
+   * Last status the server pushed. Deliberately kept across a forced
+   * resynchronisation: the document is thrown away, the server's verdict is not.
+   */
+  private authorityState: BoardAuthorityState | null = null;
 
   constructor(private readonly options: BoardSessionOptions) {
     this.open();
@@ -87,6 +104,11 @@ export class BoardSession {
 
   get synced(): boolean {
     return this.provider.synced;
+  }
+
+  /** The server's last word on this board. Null until the first frame lands. */
+  get authority(): BoardAuthorityState | null {
+    return this.authorityState;
   }
 
   private open(): void {
@@ -113,6 +135,16 @@ export class BoardSession {
       authProtocol.readAuthMessage(decoder, this.doc, (_doc, reason) => {
         this.handleDenied(reason);
       });
+    };
+
+    // Server-pushed board status. Registered the same way as the auth handler,
+    // on this provider's own copy of the handler table.
+    this.provider.messageHandlers[MESSAGE_BOARD_STATUS] = (
+      _encoder: unknown,
+      decoder: decoding.Decoder,
+    ) => {
+      const state = decodeBoardStatusPayload(decoder);
+      if (state) this.handleAuthority(state);
     };
 
     this.provider.on("status", (event: { status: ConnectionStatus }) => {
@@ -156,6 +188,12 @@ export class BoardSession {
     this.options.onDenied?.(reason);
     this.close();
     this.open();
+  }
+
+  private handleAuthority(state: BoardAuthorityState): void {
+    if (this.destroyed) return;
+    this.authorityState = state;
+    this.options.onAuthority?.(state);
   }
 
   /** Publishes this user's pointer so the others can see it. */

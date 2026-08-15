@@ -20,6 +20,7 @@ import type {
 } from "@excalidraw/excalidraw/element/types";
 import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
 import type * as Y from "yjs";
+import { StatusBadge } from "@/components/status-badge";
 import type { BoardStatus } from "@/lib/db/schema";
 import {
   BoardSession,
@@ -27,6 +28,7 @@ import {
   type ConnectionStatus,
   type Peer,
 } from "@/lib/collab/board-session";
+import type { BoardAuthorityState } from "@/lib/collab/status-frame";
 import "@excalidraw/excalidraw/index.css";
 
 declare global {
@@ -62,7 +64,12 @@ const BROADCAST_THROTTLE_MS = 80;
 
 export interface BoardCanvasProps {
   boardId: string;
-  /** Server-computed hint. The websocket server enforces the real rule. */
+  /**
+   * What the server decided when this page was rendered. It is only the
+   * starting point: the collaboration server pushes the current answer over the
+   * socket, so a teacher freezing or unfreezing the board is reflected here
+   * without anyone reloading. The websocket server enforces the real rule.
+   */
   canWrite: boolean;
   status: BoardStatus;
   user: { id: string; displayName: string };
@@ -103,6 +110,14 @@ export function BoardCanvasScene({
   const [peers, setPeers] = useState<Peer[]>([]);
   const [refusedReason, setRefusedReason] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  /**
+   * The live answer from the collaboration server, seeded with what the page
+   * was rendered with. Every later value is pushed by the server.
+   */
+  const [authority, setAuthority] = useState<BoardAuthorityState>({
+    status,
+    canWrite,
+  });
 
   const sessionRef = useRef<BoardSession | null>(null);
   const elementsRef = useRef<Y.Map<ExcalidrawElement> | null>(null);
@@ -214,6 +229,13 @@ export function BoardCanvasScene({
         if (isSynced) applyRemote();
       },
       onPeers: (next) => !disposed && setPeers(next),
+      onAuthority: (state) => {
+        if (disposed) return;
+        setAuthority(state);
+        // The board is writable again: drop the "refused" latch, which is the
+        // whole reason a frozen-out student used to need a reload.
+        if (state.canWrite) setRefusedReason(null);
+      },
       onDenied: (reason) => {
         if (disposed) return;
         // The refused shape is still on this canvas even though the shared
@@ -356,7 +378,12 @@ export function BoardCanvasScene({
     [boardTitle, exporting],
   );
 
-  const readOnly = !canWrite || refusedReason !== null;
+  // A freshly server-rendered page is newer than anything pushed earlier.
+  useEffect(() => {
+    setAuthority({ status, canWrite });
+  }, [status, canWrite]);
+
+  const readOnly = !authority.canWrite || refusedReason !== null;
 
   return (
     <section className="board-canvas">
@@ -373,6 +400,10 @@ export function BoardCanvasScene({
               ? "Connecting…"
               : "Offline"}
         </span>
+
+        {/* Live: this is the status the collaboration server last stated, not
+            the one the page was rendered with. */}
+        <StatusBadge status={authority.status} />
 
         <span className="board-presence">
           {peers.length === 0
@@ -440,9 +471,11 @@ export function BoardCanvasScene({
         />
       </div>
 
-      {status === "frozen" ? (
-        <p className="muted board-canvas-note">
-          This board is frozen. Nobody can edit it, the teacher included.
+      {!authority.canWrite ? (
+        <p className="muted board-canvas-note" role="status">
+          {authority.status === "frozen"
+            ? "This board is frozen. Nobody can edit it, the teacher included."
+            : "This board is read only for you. You can watch and export it."}
         </p>
       ) : null}
     </section>

@@ -56,8 +56,9 @@ migrated on every run. The database layer is never mocked.
 the real protocol to it over a real socket, using the same `BoardSession` class
 the browser runs. It covers handshake rejection, write refusal on a frozen or
 read-only board (including a freeze that lands mid-session), snapshot
-round-trips and rehydration after a restart, presence, and the whole
-`board_sessions` lifecycle.
+round-trips and rehydration after a restart, presence, the whole
+`board_sessions` lifecycle, and the live status push — a freeze and a later
+unfreeze both reaching a client that never reloads.
 
 ## Other commands
 
@@ -181,6 +182,7 @@ only identity the server accepts.
 | sync step 1 (a read)  | no — the handshake settled it |
 | an update (a write)   | **yes, every single time**    |
 | awareness (a cursor)  | no — presence is not a write  |
+| board status (pushed) | yes — server to client only, re-read per connection |
 
 A write frame costs one indexed query, and that is the point: the teacher can
 freeze a board mid-class from the panel, and the freeze has to bite on the very
@@ -201,6 +203,36 @@ Refusals are deliberately indistinguishable:
 That last pair is the same property Phase A's `notFound()` gives the web app:
 membership cannot be probed from outside. Codes in 4400-4499 tell the client to
 stop reconnecting; a restart closes with 1001 so clients come back.
+
+### Live status: the server tells the clients
+
+A write frame is re-authorised every time, which is enough to make a freeze bite
+immediately — but it can never make an **unfreeze** bite, because a client that
+has been refused stops sending writes. There are no frames left to check, so
+before Phase C a student stayed read-only until they reloaded the page.
+
+So the status is pushed. The collaboration server polls the boards that
+currently have a room open (`YJS_STATUS_POLL_MS`, 3s) with **one indexed query
+per interval for the whole process** — not one per board, and certainly not one
+per connected student. When a board's status has changed, every connection on
+that board re-reads `getBoardAccess` and is told, in a frame of its own, the
+board's status and whether *it* may write right now.
+
+Polling rather than `LISTEN/NOTIFY`: a poll asks the database what is true
+instead of waiting to be told, so it has no failure mode to recover from. A
+dropped listener connection, or a status changed by `psql` or a migration rather
+than by the app, would leave a whole classroom silently stuck; and nothing a
+client does — including saying nothing at all — can defeat a poll. At three
+seconds and one query, the cost is not worth a reconnection state machine.
+
+**The pushed status is a hint, never the enforcement.** The websocket server
+still re-reads `getBoardAccess` for every single update it receives. A client
+that ignores the frame, or forges one, gains nothing: an incoming frame of that
+type is classified as "ignored" like any other unknown message. The frame is
+server-to-client only.
+
+Nothing reconnects: a status change costs zero new rows in `board_sessions`, and
+the browser keeps the same document, the same socket and the same cursor.
 
 ### Why a refused write forces a resynchronisation
 
@@ -246,6 +278,7 @@ a CDN, so a classroom with a flaky network still renders correctly.
 | `YJS_SNAPSHOT_DEBOUNCE_MS` | `2000`               | Quiet time before a snapshot        |
 | `YJS_SNAPSHOT_HISTORY`     | `20`                 | Snapshots kept per board            |
 | `YJS_HEARTBEAT_MS`         | `20000`              | Participation heartbeat             |
+| `YJS_STATUS_POLL_MS`       | `3000`               | How fast a status change is pushed  |
 | `YJS_REAPER_MS`            | `60000`              | How often stale sessions are swept  |
 | `YJS_STALE_AFTER_SECONDS`  | `120`                | Silence before a session is closed  |
 

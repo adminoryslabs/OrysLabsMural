@@ -22,6 +22,7 @@ import {
 import { BoardConnection } from "./connection";
 import { consoleLogger, type Logger } from "./logger";
 import { BoardRoom } from "./room";
+import { startBoardStatusWatcher } from "./status-watcher";
 
 export interface YjsServerOptions {
   db: Database;
@@ -31,6 +32,8 @@ export interface YjsServerOptions {
   snapshotDebounceMs?: number;
   snapshotHistoryLimit?: number;
   heartbeatIntervalMs?: number;
+  /** How often open boards are re-read for a status change. 0 disables it. */
+  statusPollMs?: number;
   /** 0 disables the periodic stale-session sweep. */
   reaperIntervalMs?: number;
   staleAfterSeconds?: number;
@@ -82,6 +85,7 @@ export async function createYjsServer(
     snapshotDebounceMs = 2000,
     snapshotHistoryLimit = 20,
     heartbeatIntervalMs = 20_000,
+    statusPollMs = 3000,
     reaperIntervalMs = 60_000,
     staleAfterSeconds = 120,
     logger = consoleLogger,
@@ -183,6 +187,9 @@ export async function createYjsServer(
     }
 
     const room = await acquireRoom(boardId);
+    // The status this client was just told, handed to the watcher as its
+    // baseline so the next change is seen as a change.
+    statusWatcher.seed(boardId, access.board.status);
     if (socket.readyState !== socket.OPEN) {
       await releaseRoomIfEmpty(boardId);
       return;
@@ -203,6 +210,10 @@ export async function createYjsServer(
       boardId,
       userId: user.id,
       sessionId: session.id,
+      initialAuthority: {
+        status: access.board.status,
+        canWrite: access.canWrite,
+      },
       heartbeatIntervalMs,
       logger,
       onClosed: async (closedConnection) => {
@@ -219,6 +230,36 @@ export async function createYjsServer(
       `${user.displayName} joined board ${boardId} (${access.canWrite ? "write" : "read"})`,
     );
   }
+
+  /**
+   * LIVE STATUS PROPAGATION.
+   *
+   * The per-write authority check cannot see an unfreeze, because a client that
+   * was refused stops sending writes. So the server watches the open boards and
+   * tells every affected connection itself. What it pushes is only ever a hint:
+   * the write path still re-reads `getBoardAccess` for every single update.
+   */
+  const statusWatcher = startBoardStatusWatcher({
+    db,
+    intervalMs: statusPollMs,
+    openBoardIds: () => [...rooms.keys()],
+    onChanged: (boardId, status) => {
+      for (const connection of connections) {
+        if (connection.boardId !== boardId) continue;
+        if (status === null) {
+          // The board was deleted underneath the room. Same refusal as an
+          // unknown board, so existence still cannot be probed.
+          connection.close(CLOSE_NOT_FOUND, REASON_NOT_FOUND);
+          continue;
+        }
+        // Per connection, because "may write" depends on the user, not only on
+        // the board. It is re-read from the database, never inferred here.
+        connection.refreshAuthority();
+      }
+      logger.info(`board ${boardId} is now ${status ?? "gone"}`);
+    },
+    logger,
+  });
 
   httpServer.on("upgrade", (request, socket, head) => {
     if (shuttingDown) {
@@ -245,6 +286,7 @@ export async function createYjsServer(
 
   const boundPort = (httpServer.address() as AddressInfo).port;
 
+
   let reaper: NodeJS.Timeout | null = null;
   if (reaperIntervalMs > 0) {
     reaper = setInterval(() => {
@@ -266,6 +308,7 @@ export async function createYjsServer(
     connectionCount: () => connections.size,
     async close() {
       shuttingDown = true;
+      statusWatcher.stop();
       if (reaper) clearInterval(reaper);
 
       // Close every participation row before the process goes away, otherwise

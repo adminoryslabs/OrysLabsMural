@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { BoardCanvas } from "@/components/board-canvas";
-import { StatusBadge } from "@/components/status-badge";
 import { requireUser } from "@/lib/auth/current-user";
 import { getBoardAccess } from "@/lib/boards/queries";
 import { yjsServerUrl } from "@/lib/collab/config";
@@ -25,19 +24,14 @@ export default async function BoardPage({
 
   return (
     <main className="container board-page">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1>{access.board.title}</h1>
-        <StatusBadge status={access.board.status} />
-      </div>
+      <h1>{access.board.title}</h1>
 
-      {!access.canWrite ? (
-        <p className="muted">
-          {access.board.status === "frozen"
-            ? "This board is frozen. Nobody can edit it right now."
-            : "This board is read only for you."}
-        </p>
-      ) : null}
-
+      {/*
+        The status and the "read only" notice deliberately live INSIDE the
+        canvas, next to the live connection indicator. Rendering them here as
+        well would freeze them at page-render time, which is exactly the stale
+        state the collaboration server now pushes past.
+      */}
       <BoardCanvas
         boardId={access.board.id}
         boardTitle={access.board.title}

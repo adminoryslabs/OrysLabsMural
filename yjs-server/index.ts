@@ -40,6 +40,7 @@ async function main(): Promise<void> {
     snapshotDebounceMs: numberFromEnv("YJS_SNAPSHOT_DEBOUNCE_MS", 2000),
     snapshotHistoryLimit: numberFromEnv("YJS_SNAPSHOT_HISTORY", 20),
     heartbeatIntervalMs: numberFromEnv("YJS_HEARTBEAT_MS", 20_000),
+    statusPollMs: numberFromEnv("YJS_STATUS_POLL_MS", 3000),
     reaperIntervalMs: numberFromEnv("YJS_REAPER_MS", 60_000),
     staleAfterSeconds: numberFromEnv("YJS_STALE_AFTER_SECONDS", 120),
     logger: consoleLogger,

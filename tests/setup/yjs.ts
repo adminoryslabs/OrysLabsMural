@@ -1,9 +1,11 @@
 import { WebSocket } from "ws";
 import type * as Y from "yjs";
 import { createSession } from "@/lib/auth/session";
+import type { BoardAuthorityState } from "@/lib/collab/status-frame";
 import {
   BoardSession,
   type CollaboratorIdentity,
+  type ConnectionStatus,
   type Peer,
 } from "@/lib/collab/board-session";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session-cookie";
@@ -25,6 +27,8 @@ export function startTestServer(
     // Short timers keep the suite fast; production defaults are much longer.
     snapshotDebounceMs: 40,
     heartbeatIntervalMs: 50,
+    // Production polls every few seconds; the suite must not wait that long.
+    statusPollMs: 40,
     reaperIntervalMs: 0, // disabled unless a test opts in
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     ...options,
@@ -105,6 +109,17 @@ export interface TestClient {
   readonly shapes: Y.Map<unknown>;
   /** How many times the server refused a write from this client. */
   readonly denials: number;
+  /** The last board status the server pushed to this client. */
+  readonly authority: BoardAuthorityState | null;
+  /** Every authority push received, in order. */
+  readonly authorityUpdates: BoardAuthorityState[];
+  /** Every connection status transition, used to prove nothing reconnected. */
+  readonly connectionEvents: ConnectionStatus[];
+  /**
+   * Identity of the current Yjs document. It changes on every forced
+   * resynchronisation, so a stable value proves the client was not rebuilt.
+   */
+  readonly documentId: number;
   peers(): Peer[];
   destroy(): void;
 }
@@ -120,6 +135,8 @@ export function createClient(
   identity: Partial<CollaboratorIdentity> = {},
 ): TestClient {
   let denials = 0;
+  const authorityUpdates: BoardAuthorityState[] = [];
+  const connectionEvents: ConnectionStatus[] = [];
   const session = new BoardSession({
     serverUrl: server.url,
     boardId,
@@ -133,6 +150,12 @@ export function createClient(
     onDenied: () => {
       denials += 1;
     },
+    onAuthority: (state) => {
+      authorityUpdates.push(state);
+    },
+    onStatus: (status) => {
+      connectionEvents.push(status);
+    },
   });
 
   return {
@@ -142,6 +165,18 @@ export function createClient(
     },
     get denials() {
       return denials;
+    },
+    get authority() {
+      return session.authority;
+    },
+    get authorityUpdates() {
+      return authorityUpdates;
+    },
+    get connectionEvents() {
+      return connectionEvents;
+    },
+    get documentId() {
+      return session.document.clientID;
     },
     peers: () => session.peers(),
     destroy: () => session.destroy(),

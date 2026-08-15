@@ -1,4 +1,4 @@
-import { and, count, desc, eq, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   boardMembers,
@@ -265,6 +265,24 @@ export async function getBoardAccess(
     canWrite: canWriteToBoard(input),
     role: row.role,
   };
+}
+
+/**
+ * Statuses of several boards in ONE indexed query. This is what the
+ * collaboration server polls for its open rooms: the cost is a single query per
+ * interval for the whole process, independent of how many students are
+ * connected. Boards that no longer exist are simply absent from the map.
+ */
+export async function getBoardStatuses(
+  db: Database,
+  boardIds: readonly string[],
+): Promise<Map<string, BoardStatus>> {
+  if (boardIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: boards.id, status: boards.status })
+    .from(boards)
+    .where(inArray(boards.id, [...boardIds]));
+  return new Map(rows.map((row) => [row.id, row.status]));
 }
 
 /** Touches `updated_at`, e.g. after Phase B persists a snapshot. */

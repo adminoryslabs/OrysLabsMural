@@ -3,6 +3,10 @@ import { applyAwarenessUpdate } from "y-protocols/awareness";
 import type { Database } from "@/lib/db";
 import { getBoardAccess } from "@/lib/boards/queries";
 import {
+  encodeBoardStatus,
+  type BoardAuthorityState,
+} from "@/lib/collab/status-frame";
+import {
   endBoardSession,
   recordBoardActivity,
 } from "@/lib/participation/queries";
@@ -29,6 +33,8 @@ export interface BoardConnectionOptions {
   userId: string;
   /** Row id in `board_sessions`; this connection's attribution record. */
   sessionId: string;
+  /** What the handshake decided, so the client knows before it draws anything. */
+  initialAuthority: BoardAuthorityState;
   heartbeatIntervalMs: number;
   logger: Logger;
   onClosed(connection: BoardConnection): Promise<void> | void;
@@ -52,6 +58,8 @@ export class BoardConnection implements RoomMember {
   private heartbeat: NodeJS.Timeout | null = null;
   private lastDenialNoticeAt = 0;
   private closed = false;
+  /** Last status pushed to this client; used to avoid repeating ourselves. */
+  private announced: BoardAuthorityState | null = null;
 
   constructor(private readonly options: BoardConnectionOptions) {
     const { socket } = options;
@@ -75,16 +83,27 @@ export class BoardConnection implements RoomMember {
     }
   }
 
+  get boardId(): string {
+    return this.options.boardId;
+  }
+
   /** Opening handshake: our state vector, plus everyone already present. */
   start(): void {
     const { room } = this.options;
     room.join(this);
+    // The sync handshake still opens the conversation, so a client that knows
+    // nothing of board status is unaffected.
     this.send(encodeSyncStep1(room.doc));
 
     const present = room.connectedClientIds();
     if (present.length > 0) {
       this.send(encodeAwareness(room.awareness, present));
     }
+
+    // Then: what this client may actually do. The page was server rendered at
+    // some earlier point, so its idea of the status may already be stale by the
+    // time the socket opens.
+    this.announce(this.options.initialAuthority);
   }
 
   send(message: Uint8Array): void {
@@ -93,6 +112,44 @@ export class BoardConnection implements RoomMember {
     socket.send(message, (error) => {
       if (error) void this.dispose();
     });
+  }
+
+  /**
+   * Re-reads this connection's access and tells the client what it may do now.
+   *
+   * Called when the board's status changes, which is the only moment the
+   * verdict can flip while the client is idle. It is the same
+   * `getBoardAccess` the write path uses: the pushed value is derived from the
+   * database, never from anything the client said.
+   */
+  refreshAuthority(): void {
+    this.enqueue(async () => {
+      if (this.closed) return;
+      const { db, boardId, userId } = this.options;
+      const access = await getBoardAccess(db, boardId, userId);
+      if (!access || !access.canView) {
+        // The board is gone, or this user is no longer allowed on it. Same
+        // refusal as the handshake, so membership stays unprobeable.
+        this.close(CLOSE_NOT_FOUND, REASON_NOT_FOUND);
+        return;
+      }
+      this.announce({
+        status: access.board.status,
+        canWrite: access.canWrite,
+      });
+    });
+  }
+
+  /** Sends a status frame, unless this client already knows exactly that. */
+  private announce(state: BoardAuthorityState): void {
+    if (
+      this.announced?.status === state.status &&
+      this.announced.canWrite === state.canWrite
+    ) {
+      return;
+    }
+    this.announced = state;
+    this.send(encodeBoardStatus(state));
   }
 
   private enqueue(task: () => Promise<void>): void {
@@ -145,6 +202,9 @@ export class BoardConnection implements RoomMember {
       this.close(CLOSE_NOT_FOUND, REASON_NOT_FOUND);
       return;
     }
+
+    // The check has already been paid for, so keep the client's hint honest.
+    this.announce({ status: access.board.status, canWrite: access.canWrite });
 
     if (!access.canWrite) {
       this.notifyDenied(access.board.status);
