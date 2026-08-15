@@ -1,15 +1,94 @@
+/* =========================================================================
+   OrysLabs Mural — design tokens and shared styles.
+
+   The visual language is OrysLabs Academy "Minimal": warm off-white paper,
+   near-black ink, one chartreuse accent used as a fill only, hairline rules,
+   no shadows, and a border radius of 0 everywhere except avatars.
+
+   Fonts are vendored into `public/fonts/` rather than fetched from Google, for
+   the same reason Excalidraw's fonts are copied into `public/excalidraw/`: the
+   classroom must render correctly with no outbound connection. The subsets and
+   unicode ranges below are Google's own; anything outside them falls back to
+   the system stack.
+   ========================================================================= */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
-  --bg: #f6f7f9;
+  /* Surfaces */
+  --paper: #fbfbf9;
   --surface: #ffffff;
-  --border: #dfe3e8;
-  --text: #1b1f24;
-  --muted: #5c6673;
-  --accent: #2f6fed;
-  --accent-text: #ffffff;
-  --danger: #c0392b;
-  --ok: #1f8a4c;
-  --warn: #b8860b;
-  --radius: 8px;
+  --surface-sunken: #f5f6f1;
+  --surface-selected: #f0f1ec;
+  --surface-frozen: #f3f4ef;
+
+  /* Text. `--text` and `--muted` are darkened to clear 4.5:1 on `--paper`.
+     Do not lighten them. */
+  --ink: #12141f;
+  --text: #4b5147;
+  --muted: #6b7065;
+
+  /* Rules */
+  --line: #eeefe9;
+  --line-strong: #dcded1;
+
+  /* Accent. The chartreuse is a FILL only; accent-coloured text uses
+     `--accent-ink`, which is the only one of the two that passes AA. */
+  --accent: #a3e635;
+  --accent-ink: #4d7c0f;
+
+  /* Canvas */
+  --canvas-dot: #e8e9e2;
+  --canvas-label: #c2c6ba;
+
+  /* Not in the handoff: destructive actions and inline errors still need a
+     colour, and neither ink nor the accent can carry that meaning. */
+  --danger: #a4302a;
+
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
 }
 
 * {
@@ -20,168 +99,85 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  height: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
   font-size: 15px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--accent);
+  color: inherit;
   text-decoration: none;
 }
 
 a:hover {
-  text-decoration: underline;
+  color: var(--accent-ink);
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+/* The prototypes remove focus outlines. Production does not: every interactive
+   element keeps a visible indicator, and the board's state control and panel
+   toggle are keyboard operable. */
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
-.app-header nav {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.brand {
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text);
-}
-
-.container {
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-.container-narrow {
-  max-width: 420px;
-  margin: 8vh auto;
-  padding: 24px;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 20px;
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
 }
 
 h1 {
-  font-size: 24px;
-  margin: 0 0 16px;
+  font-size: 28px;
 }
 
 h2 {
   font-size: 18px;
-  margin: 0 0 12px;
 }
 
-label {
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e4e5dd;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --- Primitives ---------------------------------------------------------- */
+
+.icon {
   display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  margin-bottom: 4px;
+  flex-shrink: 0;
 }
 
-input[type="text"],
-input[type="email"],
-input[type="password"],
-select {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  margin-bottom: 12px;
-}
-
-button {
-  font: inherit;
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: var(--accent);
-}
-
-button.primary {
+.brand-mark {
+  width: 9px;
+  height: 9px;
   background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
+  flex-shrink: 0;
 }
 
-button.danger {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th,
-td {
-  text-align: left;
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-th {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid var(--border);
-}
-
-.badge-active {
-  color: var(--ok);
-  border-color: var(--ok);
-}
-
-.badge-frozen {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.badge-readonly {
-  color: var(--warn);
-  border-color: var(--warn);
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 15.5px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .muted {
@@ -192,7 +188,7 @@ th {
 .error {
   color: var(--danger);
   font-size: 13px;
-  margin-bottom: 12px;
+  margin: 0 0 12px;
 }
 
 .row {
@@ -206,124 +202,1027 @@ th {
   display: inline;
 }
 
-/* --- Board canvas (Excalidraw + Yjs) ------------------------------------- */
-
-.board-page {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.board-canvas {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.board-canvas-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  font-size: 0.9rem;
-}
-
-.board-connection {
+/* Buttons. `.btn-solid` is the ink primary; `.btn-quiet` is the underlined text
+   action used for consequential-but-reversible things. */
+.btn-solid {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
-.board-connection::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--muted);
+.btn-solid:hover:not(:disabled) {
+  background: var(--accent-ink);
 }
 
-.board-connection-connected::before {
-  background: #16a34a;
+.btn-solid:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
-.board-connection-connecting::before {
-  background: #ca8a04;
-}
-
-.board-connection-disconnected::before {
-  background: #dc2626;
-}
-
-.board-presence {
+.btn-quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  height: 46px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
   color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line);
 }
 
-.board-peers {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  list-style: none;
-  margin: 0;
+.btn-quiet:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.btn-quiet:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
 }
 
-.board-peer {
+.btn-icon:hover {
+  color: var(--ink);
+}
+
+/* Status dot: always 7x7, square, never rounded. */
+.status-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.status-dot-active {
+  background: var(--accent);
+}
+
+.status-dot-frozen {
+  background: var(--ink);
+}
+
+.status-dot-readonly {
+  background: transparent;
+  border: 1px solid var(--muted);
+}
+
+.status-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: var(--muted);
+  gap: 7px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--text);
 }
 
-.board-peer-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.status-label-active {
+  color: var(--ink);
 }
 
-.board-canvas-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
-
-.board-canvas-refused {
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid #f0c36d;
-  border-radius: var(--radius);
-  background: #fdf6e3;
-}
-
-/* Excalidraw fills its container, so the container needs an explicit height. */
-.board-canvas-surface {
-  height: 72vh;
-  min-height: 420px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.board-canvas-loading {
+/* Avatars are the single exception to radius 0. */
+.avatar {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 72vh;
-  min-height: 420px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #ffffff;
+  border: 1.5px solid var(--paper);
 }
 
-.board-canvas-note {
+.avatar-on-surface {
+  border-color: var(--surface);
+}
+
+.avatar-offline {
+  background: var(--line);
+  color: var(--muted);
+}
+
+.avatar-stack {
+  display: flex;
+}
+
+.avatar-stack > .avatar + .avatar {
+  margin-left: -7px;
+}
+
+/* --- Landing + sign-in --------------------------------------------------- */
+
+.landing {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+
+.landing-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 26px 40px;
+}
+
+.landing-header .wordmark {
+  font-size: 16px;
+}
+
+.landing-header-suffix {
+  font-size: 13px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.landing-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  gap: 80px;
+  align-items: center;
+  padding: 20px 40px 60px;
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.landing-pitch {
+  min-width: 0;
+}
+
+.landing-pitch h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 54px;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  margin: 0 0 24px;
+  max-width: 19ch;
+  text-wrap: pretty;
+}
+
+.landing-lede {
+  font-size: 17.5px;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 0 0 40px;
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+
+.landing-features {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 44ch;
+}
+
+.landing-feature {
+  display: flex;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
   margin: 0;
 }
 
-/* Batch membership: a class-sized list has to stay scannable and scrollable. */
+.landing-feature .icon {
+  color: var(--accent-ink);
+  flex-shrink: 0;
+}
+
+.landing-form {
+  min-width: 0;
+}
+
+.landing-form h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  margin: 0 0 22px;
+}
+
+.landing-form label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+.landing-form input {
+  width: 100%;
+  height: 46px;
+  padding: 0 0 0 2px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+  margin-bottom: 22px;
+}
+
+.landing-form input:focus {
+  /* A visible focus indicator on top of the browser's own outline: the
+     underline is the field's affordance, so it has to move too. */
+  border-bottom-color: var(--ink);
+}
+
+.landing-form input[type="password"] {
+  margin-bottom: 30px;
+}
+
+.landing-form .btn-solid {
+  width: 100%;
+  height: 48px;
+  font-size: 15px;
+  gap: 9px;
+}
+
+.landing-footnote {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 18px 0 0;
+}
+
+.landing-footer {
+  padding: 0 40px 30px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .landing-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 48px;
+    padding: 12px 24px 48px;
+  }
+
+  /* Form first on a phone: someone on their way into class is here to sign in,
+     not to read the pitch. */
+  .landing-form {
+    order: -1;
+  }
+
+  .landing-pitch h1 {
+    font-size: 40px;
+  }
+
+  .landing-header,
+  .landing-footer {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+/* --- App shell ----------------------------------------------------------- */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--paper);
+}
+
+.app-nav {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 60px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.app-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-nav-link {
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.app-nav-link-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.app-nav-user {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.app-nav-name {
+  font-size: 13.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The board screen owns its own overflow and must not scroll the page. */
+.app-main-fixed {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 56px 28px 72px;
+}
+
+.container-wide {
+  max-width: 1180px;
+}
+
+/* --- Dashboard ----------------------------------------------------------- */
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 44px;
+  flex-wrap: wrap;
+}
+
+.page-head h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+}
+
+.page-subline {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
+}
+
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.view-toggle button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+}
+
+.view-toggle button[aria-pressed="true"] {
+  background: var(--surface-selected);
+  color: var(--ink);
+}
+
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 20px;
+}
+
+.board-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  min-height: 216px;
+}
+
+.board-card:hover {
+  border-color: var(--line-strong);
+}
+
+.board-card-thumb {
+  height: 82px;
+  flex-shrink: 0;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  background-color: var(--surface);
+  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.board-card-thumb-frozen {
+  background-color: var(--surface-frozen);
+}
+
+.board-card-thumb .status-dot {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+}
+
+.board-card-body {
+  padding: 16px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.board-card-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 16.5px;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  display: block;
+  margin-bottom: 6px;
+  text-wrap: pretty;
+}
+
+.board-card-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.board-card-presence {
+  margin-top: auto;
+}
+
+.presence-label {
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.presence-label-empty {
+  color: var(--muted);
+}
+
+.board-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+}
+
+.board-list {
+  border-top: 1px solid var(--line);
+}
+
+.board-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px 106px 86px;
+  gap: 20px;
+  align-items: center;
+  padding: 18px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.board-row:hover {
+  background: var(--surface-sunken);
+}
+
+.board-row-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.015em;
+  display: block;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-row-meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.board-row-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .board-row {
+    grid-template-columns: minmax(0, 1fr) 96px;
+    row-gap: 10px;
+  }
+}
+
+/* The state action and its inline confirmation / error live together, so the
+   message appears next to the control that failed rather than as a toast. */
+.state-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.state-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.state-confirm-text {
+  font-size: 12.5px;
+  color: var(--text);
+  max-width: 22ch;
+  text-align: right;
+}
+
+.state-error {
+  font-size: 12.5px;
+  color: var(--danger);
+  text-align: right;
+  margin: 0;
+}
+
+.empty-line {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 24px;
+}
+
+/* --- Live board ---------------------------------------------------------- */
+
+.board-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board-topbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 56px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.board-topbar-back {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.board-topbar-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 15.5px;
+  letter-spacing: -0.015em;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 120px;
+}
+
+.board-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.state-control {
+  display: flex;
+}
+
+.state-control button {
+  border: none;
+  padding: 0 11px;
+  height: 30px;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.state-control button[aria-checked="true"] {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+}
+
+.state-control button:disabled {
+  cursor: default;
+}
+
+.panel-toggle {
+  width: 30px;
+  height: 30px;
+}
+
+.panel-toggle[aria-pressed="true"] {
+  background: var(--surface-selected);
+  color: var(--ink);
+}
+
+.board-note {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.board-note-frozen {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.board-note .icon {
+  flex-shrink: 0;
+}
+
+.board-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* The Excalidraw mount. It has no dotted placeholder: the real canvas draws
+   its own background. */
+.board-canvas-surface {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.board-canvas-surface > .excalidraw-host {
+  position: absolute;
+  inset: 0;
+}
+
+.board-canvas-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+}
+
+.board-conn {
+  position: absolute;
+  left: 20px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.board-conn span:last-child {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.board-conn-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  background: var(--accent);
+}
+
+.board-conn-dot-frozen {
+  background: var(--ink);
+}
+
+.board-conn-dot-offline {
+  background: var(--muted);
+}
+
+.board-refused {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 46px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.board-panel {
+  width: 272px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.board-panel-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 20px 20px 14px;
+}
+
+.board-panel-head h2 {
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.board-panel-count {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0 0 0 auto;
+}
+
+.board-roster {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 16px;
+  margin: 0;
+  list-style: none;
+}
+
+.board-roster li {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px;
+}
+
+.roster-name {
+  display: block;
+  font-size: 13.5px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roster-name-offline {
+  color: var(--muted);
+}
+
+.roster-name-self {
+  font-weight: 600;
+}
+
+.roster-state {
+  display: block;
+  font-size: 11.5px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.roster-state-editing {
+  color: var(--accent-ink);
+}
+
+.board-panel-foot {
+  flex-shrink: 0;
+  display: flex;
+  gap: 18px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.btn-text {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn-text:hover:not(:disabled) {
+  color: var(--accent-ink);
+}
+
+.btn-text:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (max-width: 720px) {
+  .board-panel {
+    width: 216px;
+  }
+}
+
+/* --- Forms, tables and cards on the remaining admin screens -------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+select,
+textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  margin-bottom: 12px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--ink);
+}
+
+/* Default button on the admin screens that keep the plain form language. The
+   redesigned surfaces opt out through `.btn-*`, which win on specificity. */
+button {
+  font: inherit;
+  padding: 8px 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+
+button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.form-inline-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.form-inline-field > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-inline-field input {
+  margin-bottom: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  font-size: 14px;
+}
+
+th {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .batch-controls {
   gap: 8px;
   margin-bottom: 8px;
@@ -331,6 +1230,7 @@ th {
 
 .batch-controls input[type="search"] {
   flex: 1;
+  margin-bottom: 0;
 }
 
 .batch-picker {
@@ -339,8 +1239,7 @@ th {
   padding: 4px;
   max-height: 260px;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--line);
   background: var(--surface);
 }
 
@@ -350,11 +1249,12 @@ th {
   gap: 8px;
   padding: 4px 6px;
   cursor: pointer;
+  font-size: 14px;
+  color: var(--ink);
 }
 
 .batch-picker label:hover {
-  background: var(--bg);
-  border-radius: 4px;
+  background: var(--surface-sunken);
 }
 
 .batch-paste {
@@ -363,7 +1263,7 @@ th {
 }
 
 .batch-paste textarea {
-  width: 100%;
   font-family: inherit;
   margin-top: 4px;
 }
+
