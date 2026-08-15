@@ -1,0 +1,37 @@
+# Caddy obtains and renews the TLS certificate automatically for APP_DOMAIN.
+# Point the domain's A/AAAA record at the VPS before starting the stack.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# ---------------------------------------------------------------------
+	# PHASE B: realtime Yjs websocket endpoint.
+	# Uncomment together with the `yjs` service in docker-compose.prod.yml.
+	# The client connects to wss://{$APP_DOMAIN}/yjs (NEXT_PUBLIC_YJS_URL).
+	# The cookie is forwarded, which is how the websocket server authenticates
+	# the handshake against the `mural_session` session cookie.
+	# ---------------------------------------------------------------------
+	# handle /yjs* {
+	# 	reverse_proxy yjs:1234
+	# }
+
+	handle {
+		reverse_proxy app:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

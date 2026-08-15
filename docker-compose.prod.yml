@@ -1,0 +1,109 @@
+# Production stack for the VPS: Caddy (automatic TLS) -> Next.js app + Yjs
+# websocket server, both backed by Postgres 17.
+#
+#   cp env.example .env   # then edit APP_DOMAIN, ACME_EMAIL and the passwords
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Only Caddy publishes ports; every other service stays on the internal network.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-mural}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-mural}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # One-shot job: applies pending migrations, then exits. The app waits for it.
+  migrate:
+    build:
+      context: .
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mural}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mural}
+      COOKIE_SECURE: "true"
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      NEXT_PUBLIC_YJS_URL: ${NEXT_PUBLIC_YJS_URL:-wss://${APP_DOMAIN}/yjs}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # PHASE B OWNS THIS SERVICE.
+  # It is declared now so Caddy routing, networking and env wiring are already
+  # in place. Phase B replaces `image` with `build: { context: ./yjs-server }`
+  # (or keeps a published image) and implements the server itself. It must:
+  #   - listen on port 1234 (or change YJS_PORT and the Caddyfile together)
+  #   - authenticate the handshake against the `mural_session` cookie
+  #   - read board status through lib/boards/queries#getBoardAccess
+  #   - write board_sessions / board_snapshots
+  # Until then this service is commented out so the stack starts cleanly.
+  # ---------------------------------------------------------------------------
+  # yjs:
+  #   build:
+  #     context: ./yjs-server
+  #   restart: unless-stopped
+  #   environment:
+  #     DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mural}
+  #     YJS_PORT: 1234
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
