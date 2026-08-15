@@ -441,7 +441,7 @@ h2 {
   margin-bottom: 7px;
 }
 
-.landing-form input {
+form.landing-form input {
   width: 100%;
   height: 46px;
   padding: 0 0 0 2px;
@@ -454,13 +454,13 @@ h2 {
   margin-bottom: 22px;
 }
 
-.landing-form input:focus {
+form.landing-form input:focus {
   /* A visible focus indicator on top of the browser's own outline: the
      underline is the field's affordance, so it has to move too. */
   border-bottom-color: var(--ink);
 }
 
-.landing-form input[type="password"] {
+form.landing-form input[type="password"] {
   margin-bottom: 30px;
 }
 
