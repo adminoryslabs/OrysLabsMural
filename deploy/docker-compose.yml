@@ -11,8 +11,11 @@
 services:
   # One-shot. Runs to completion before the app is useful; `docker compose up`
   # does not wait for it, so deploys run it explicitly first.
+  # Same image as `yjs`: identical files, identical dependencies, different
+  # entry point. Two images meant pulling the same bytes twice.
   migrate:
-    image: ghcr.io/adminoryslabs/mural-migrator:${IMAGE_TAG}
+    image: ghcr.io/adminoryslabs/mural-worker:${IMAGE_TAG}
+    command: ["npx", "tsx", "scripts/migrate.ts"]
     env_file: [app.env]
     networks: [data]
     restart: "no"
@@ -52,7 +55,7 @@ services:
       - traefik.http.services.mural-app.loadbalancer.server.port=3000
 
   yjs:
-    image: ghcr.io/adminoryslabs/mural-yjs:${IMAGE_TAG}
+    image: ghcr.io/adminoryslabs/mural-worker:${IMAGE_TAG}
     restart: unless-stopped
     env_file: [app.env]
     networks: [edge, data]

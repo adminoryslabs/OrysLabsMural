@@ -37,10 +37,11 @@ jobs:
         include:
           - name: app
             target: runner
-          - name: yjs
-            target: yjs
-          - name: migrator
-            target: migrator
+          # One worker image serves both the collaboration server and the
+          # migration job. They need identical files, so shipping them as two
+          # images meant moving the same bytes twice on every deploy.
+          - name: worker
+            target: worker
 
     steps:
       - uses: actions/checkout@v5

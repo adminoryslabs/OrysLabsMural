@@ -26,12 +26,14 @@
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",
     "@node-rs/argon2": "2.1.0",
+    "dotenv": "17.4.2",
     "drizzle-orm": "0.45.2",
     "lib0": "0.2.117",
     "next": "15.5.23",
     "postgres": "3.4.9",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "tsx": "4.23.12",
     "ws": "8.21.3",
     "y-protocols": "1.0.7",
     "y-websocket": "3.1.0",
@@ -45,11 +47,9 @@
     "@types/react-dom": "19.2.4",
     "@types/ws": "8.18.1",
     "concurrently": "9.2.1",
-    "dotenv": "17.4.2",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.1",
     "eslint-config-next": "15.5.23",
-    "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   }
