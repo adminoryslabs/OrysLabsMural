@@ -1,0 +1,90 @@
+# OrysLabsMural — collaborative whiteboard.
+#
+# Two containers behind ONE hostname. Traefik routes /yjs* to the realtime
+# server and everything else to the Next.js app. Same origin is not cosmetic:
+# it is what makes the browser send the `mural_session` cookie on the websocket
+# upgrade, which is the only way the realtime server can authenticate a client.
+# A separate subdomain would fail every handshake with 4401.
+#
+# Images are pulled, never built here. See .github/workflows/publish.yml.
+
+services:
+  # One-shot. Runs to completion before the app is useful; `docker compose up`
+  # does not wait for it, so deploys run it explicitly first.
+  migrate:
+    image: ghcr.io/adminoryslabs/mural-migrator:${IMAGE_TAG}
+    env_file: [app.env]
+    networks: [data]
+    restart: "no"
+    labels:
+      - traefik.enable=false
+
+  app:
+    image: ghcr.io/adminoryslabs/mural-app:${IMAGE_TAG}
+    restart: unless-stopped
+    env_file: [app.env]
+    networks: [edge, data]
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "1.00"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      - traefik.enable=true
+      # Two networks are attached, so Traefik must be told which one to dial.
+      - traefik.docker.network=edge
+      - traefik.http.routers.mural-app.rule=Host(`collab.oryslabs.com`)
+      - traefik.http.routers.mural-app.entrypoints=websecure
+      - traefik.http.routers.mural-app.tls.certresolver=letsencrypt
+      - traefik.http.routers.mural-app.priority=10
+      - traefik.http.services.mural-app.loadbalancer.server.port=3000
+
+  yjs:
+    image: ghcr.io/adminoryslabs/mural-yjs:${IMAGE_TAG}
+    restart: unless-stopped
+    env_file: [app.env]
+    networks: [edge, data]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.00"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:1234/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=edge
+      # Higher priority than the catch-all host router above, so /yjs* wins.
+      - traefik.http.routers.mural-yjs.rule=Host(`collab.oryslabs.com`) && PathPrefix(`/yjs`)
+      - traefik.http.routers.mural-yjs.entrypoints=websecure
+      - traefik.http.routers.mural-yjs.tls.certresolver=letsencrypt
+      - traefik.http.routers.mural-yjs.priority=20
+      - traefik.http.services.mural-yjs.loadbalancer.server.port=1234
+
+networks:
+  edge:
+    external: true
+  data:
+    external: true

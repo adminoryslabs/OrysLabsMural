@@ -1,7 +1,11 @@
-name: Publish images
+name: Build and deploy
 
-# Images are built here, never on the VPS: the server has 2 vCPU and may be
-# serving a live class while a build runs. The server only ever pulls.
+# Push to main and forget. This workflow builds the three images, publishes them
+# to GHCR, and deploys them to the VPS.
+#
+# Images are never built on the server: it has 2 vCPU and may be serving a live
+# class. The server only pulls, and it holds no long-lived registry credential —
+# the deploy step logs in with this job's own GITHUB_TOKEN and logs out again.
 
 on:
   push:
@@ -15,6 +19,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/adminoryslabs/mural
   # NEXT_PUBLIC_* values are inlined into the JavaScript bundle at build time,
   # so the public websocket URL must be known here. Same origin as the app, so
   # the browser sends the session cookie on the upgrade request.
@@ -38,7 +43,7 @@ jobs:
             target: migrator
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: docker/setup-buildx-action@v3
 
@@ -55,12 +60,60 @@ jobs:
           context: .
           target: ${{ matrix.target }}
           push: true
-          # The commit tag is what the server pins to; `latest` is a convenience
+          # The commit sha is what the deploy pins to. `latest` is a convenience
           # for humans reading the registry, never for a deploy.
           tags: |
-            ${{ env.REGISTRY }}/adminoryslabs/mural-${{ matrix.name }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/adminoryslabs/mural-${{ matrix.name }}:latest
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:latest
           build-args: |
             NEXT_PUBLIC_YJS_URL=${{ env.YJS_URL }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only the real branch deploys; a manual run on a branch builds but stops.
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: read
+    concurrency:
+      # Never let two deploys race on the same host.
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Authorise the runner against the VPS
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Ship the compose file and the deploy script
+        run: |
+          scp -i ~/.ssh/deploy_key deploy/docker-compose.yml deploy/deploy.sh \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/apps/mural/"
+
+      - name: Deploy
+        run: |
+          # STDIN carries the registry token, so the deploy script has to be a
+          # file on the server rather than a heredoc — the two cannot share it.
+          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | ssh -i ~/.ssh/deploy_key \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "IMAGE_TAG='${{ github.sha }}' ACTOR='${{ github.actor }}' bash /opt/apps/mural/deploy.sh"
+
+      - name: Verify the site answers over TLS
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+              https://collab.oryslabs.com/api/health || echo 000)
+            echo "attempt $i -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "the site never returned 200 over TLS"
+          exit 1
