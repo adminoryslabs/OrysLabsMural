@@ -11,6 +11,7 @@ import {
   shouldCreateStickyNote,
   stickyNoteOrigin,
   stickyNoteSkeleton,
+  STICKY_NOTE_TEXT_COLOR,
   viewportCentre,
   type StickyEditingState,
   type StickyKeyEvent,
@@ -83,6 +84,21 @@ describe("the note skeleton", () => {
     // rectangle and lose the centring and the font size for everyone.
     const label = (note as { label?: { text: string } }).label;
     expect(label?.text).toBeTruthy();
+  });
+
+  it("gives the label its own ink instead of inheriting the container's", () => {
+    // Excalidraw builds the bound text with
+    // `strokeColor: label.strokeColor || container.strokeColor`, and on a text
+    // element `strokeColor` IS the colour of the letters. The container is
+    // deliberately transparent so the square has no outline, so a label without
+    // its own colour produced invisible text: present, editable, selectable and
+    // impossible to read. Nothing about the rendered rectangle looked wrong.
+    const label = (note as { label?: { strokeColor?: string } }).label;
+    const container = note as { strokeColor?: string };
+
+    expect(container.strokeColor).toBe("transparent");
+    expect(label?.strokeColor).toBe(STICKY_NOTE_TEXT_COLOR);
+    expect(label?.strokeColor).not.toBe(container.strokeColor);
   });
 
   it("invents no version, versionNonce or seed", () => {

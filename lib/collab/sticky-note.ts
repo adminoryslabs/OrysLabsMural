@@ -27,6 +27,21 @@ export const STICKY_NOTE_SIZE = 180;
 export const STICKY_NOTE_FONT_SIZE = 20;
 
 /**
+ * Ink for the bound text, and it MUST be set explicitly.
+ *
+ * Excalidraw builds a label's text element with
+ * `strokeColor: label.strokeColor || container.strokeColor`, and a text
+ * element's `strokeColor` is the colour of the letters. The note's container is
+ * deliberately `transparent` so the square has no outline, so a label without
+ * its own colour inherits that and the text is invisible — present, editable,
+ * selectable, and impossible to see.
+ *
+ * `--ink` from the Academy Minimal palette, which clears 4.5:1 on every colour
+ * in `STICKY_NOTE_COLORS`; they are all light pastels for exactly this reason.
+ */
+export const STICKY_NOTE_TEXT_COLOR = "#12141f";
+
+/**
  * A sticky note is a rectangle, and so is a rectangle. `customData` is how we
  * tell them apart: it is part of the element, so it travels through the Yjs
  * document and every peer agrees on what is a note without any extra state.
@@ -154,6 +169,9 @@ export function stickyNoteSkeleton(
       fontSize: STICKY_NOTE_FONT_SIZE,
       textAlign: "center",
       verticalAlign: "middle",
+      // Without this the text inherits the container's transparent stroke and
+      // becomes invisible. See STICKY_NOTE_TEXT_COLOR.
+      strokeColor: STICKY_NOTE_TEXT_COLOR,
     },
   };
 }
