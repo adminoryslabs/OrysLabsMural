@@ -185,6 +185,50 @@ export const boardSnapshots = pgTable(
 );
 
 /**
+ * BINARY ASSETS REFERENCED BY THE DOCUMENT.
+ *
+ * Excalidraw splits an image into an element (position, size, `fileId`) and the
+ * bytes themselves. The element lives in the Yjs document like every other
+ * shape; the bytes deliberately do NOT. A 2 MB image encoded into the CRDT
+ * would be broadcast to every connected student, rewritten into every
+ * `board_snapshots` row and re-downloaded in full by every late joiner. Only
+ * the `fileId` travels over the socket, and the bytes are fetched once over
+ * HTTP from here.
+ *
+ * The primary key is (board_id, file_id): Excalidraw derives `file_id` from the
+ * content, so the same image pasted onto two boards would otherwise collide and
+ * silently share a row across two different authorisation domains.
+ */
+export const boardFiles = pgTable(
+  "board_files",
+  {
+    boardId: uuid("board_id")
+      .notNull()
+      .references(() => boards.id, { onDelete: "cascade" }),
+    /** Excalidraw's own file id, as it appears on the image element. */
+    fileId: text("file_id").notNull(),
+    /** Sniffed from the bytes, not taken from the client's word for it. */
+    mimeType: text("mime_type").notNull(),
+    bytes: bytea("bytes").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    /** Attribution: every write path names the user it came from. */
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.boardId, table.fileId] }),
+    // "Everything this board holds", for cleanup and for a size report.
+    index("board_files_board_idx").on(table.boardId),
+    // "What did this user upload", the attribution question.
+    index("board_files_created_by_idx").on(table.createdBy),
+  ],
+);
+
+/**
  * Authentication session store. `id` is the SHA-256 hash of the token held in
  * the cookie, so a database leak does not hand out usable sessions.
  */
@@ -213,6 +257,8 @@ export type NewBoard = typeof boards.$inferInsert;
 export type BoardMember = typeof boardMembers.$inferSelect;
 export type BoardSession = typeof boardSessions.$inferSelect;
 export type BoardSnapshot = typeof boardSnapshots.$inferSelect;
+export type BoardFile = typeof boardFiles.$inferSelect;
+export type NewBoardFile = typeof boardFiles.$inferInsert;
 export type AuthSession = typeof sessions.$inferSelect;
 export type UserRole = (typeof userRole.enumValues)[number];
 export type BoardStatus = (typeof boardStatus.enumValues)[number];
