@@ -1016,17 +1016,37 @@ form.landing-form input[type="password"] {
   background: var(--muted);
 }
 
-.board-refused {
+/* Stack for the inline notices, so a refused write and a refused image can be
+   on screen at once instead of covering each other. */
+.board-notices {
   position: absolute;
   left: 20px;
   right: 20px;
   bottom: 46px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.board-refused {
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
   background: var(--surface-sunken);
   color: var(--text);
   font-size: 13px;
+  pointer-events: auto;
+}
+
+.board-refused-dismiss {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .board-panel {

@@ -8,6 +8,13 @@
       "when": 1786757608229,
       "tag": "0000_dapper_sumo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786913616374,
+      "tag": "0001_skinny_warpath",
+      "breakpoints": true
     }
   ]
 }

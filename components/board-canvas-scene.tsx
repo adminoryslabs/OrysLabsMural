@@ -10,6 +10,7 @@ import {
 } from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
+  BinaryFileData,
   BinaryFiles,
   Collaborator,
   SocketId,
@@ -35,6 +36,13 @@ import {
   type Peer,
 } from "@/lib/collab/board-session";
 import type { BoardAuthorityState } from "@/lib/collab/status-frame";
+import {
+  blobToDataUrl,
+  dataUrlToBlob,
+  fetchBoardFile,
+  referencedFileIds,
+  uploadBoardFile,
+} from "@/lib/collab/board-files";
 import "@excalidraw/excalidraw/index.css";
 
 declare global {
@@ -75,6 +83,26 @@ const EDITING_WINDOW_MS = 5000;
 const CLOCK_TICK_MS = 2000;
 
 const PANEL_STORAGE_KEY = "mural.panelOpen";
+
+/**
+ * Quiet time before the image sync pass runs. Uploads must never sit in a
+ * render path, and pasting a picture fires several `onChange` calls in a row.
+ */
+const FILE_SYNC_DEBOUNCE_MS = 250;
+
+/**
+ * Backstop pass. An element can reach a peer before its bytes finish uploading,
+ * so a missing file is normal for a moment; this is also what retries a fetch
+ * that lost the race, without any coordination between the two clients.
+ */
+const FILE_SYNC_INTERVAL_MS = 1500;
+
+/** How many times a still-missing file is asked for before we stop asking. */
+const MAX_FILE_FETCH_ATTEMPTS = 12;
+
+function nextVersionNonce(): number {
+  return Math.floor(Math.random() * 2 ** 31);
+}
 
 export interface BoardMember {
   userId: string;
@@ -142,6 +170,8 @@ export function BoardCanvasScene({
   const [synced, setSynced] = useState(false);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [refusedReason, setRefusedReason] = useState<string | null>(null);
+  /** Why an image was refused. Shown inline instead of leaving it broken. */
+  const [fileError, setFileError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   /** Last time the document changed, local or remote. Drives "saved Ns ago". */
@@ -177,7 +207,35 @@ export function BoardCanvasScene({
    */
   const discardLocalScene = useRef(false);
 
+  /**
+   * IMAGE BOOKKEEPING. The bytes of an image never enter the Yjs document, so
+   * this client has to keep track of which files the server already holds and
+   * which ones it is still missing locally. All of it lives in refs: none of it
+   * belongs in the render, and the sync pass must stay stable for the lifetime
+   * of the page so it can never tear the websocket session down.
+   */
+  /** Files the server is known to hold: uploaded by us, or fetched from it. */
+  const serverFileIds = useRef(new Set<string>());
+  const uploadsInFlight = useRef(new Set<string>());
+  const fetchesInFlight = useRef(new Set<string>());
+  /** Files the server refused for good. Never retried, never re-added. */
+  const rejectedFileIds = useRef(new Set<string>());
+  const fetchAttempts = useRef(new Map<string, number>());
+  const fileSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Aborts every in-flight transfer when the board page goes away. */
+  const fileTransfers = useRef<AbortController | null>(null);
+  /**
+   * The live authority, readable from a callback without making that callback
+   * depend on it — a changing dependency here would rebuild the session effect
+   * and reconnect the socket on every freeze.
+   */
+  const authorityRef = useRef<BoardAuthorityState>({ status, canWrite });
+
   apiRef.current = api;
+  authorityRef.current = authority;
+
+  /** Set once `flushLocalChanges` exists below; see the note on `flushRef`. */
+  const flushRef = useRef<() => void>(() => {});
 
   const identity = useMemo(
     () => ({
@@ -187,6 +245,165 @@ export function BoardCanvasScene({
     }),
     [user.id, user.displayName],
   );
+
+  /**
+   * Takes an image off the canvas because its bytes will never reach the
+   * server. Leaving it would be worse than removing it: the element syncs to
+   * everyone, so every other student would be left with a picture frame that
+   * can never load, on a board that otherwise looks fine.
+   *
+   * The deletion is a normal edit — version bumped, nonce fresh — so the next
+   * flush broadcasts it and the peers who already received the element drop it
+   * too.
+   */
+  const removeImagesForFiles = useCallback((fileIds: ReadonlySet<string>) => {
+    const scene = apiRef.current;
+    if (!scene || fileIds.size === 0) return;
+
+    let removed = false;
+    const elements = scene
+      .getSceneElementsIncludingDeleted()
+      .map((element) => {
+        if (
+          element.type !== "image" ||
+          element.isDeleted ||
+          !element.fileId ||
+          !fileIds.has(element.fileId)
+        ) {
+          return element;
+        }
+        removed = true;
+        return {
+          ...element,
+          isDeleted: true,
+          version: element.version + 1,
+          versionNonce: nextVersionNonce(),
+        };
+      });
+    if (!removed) return;
+
+    scene.updateScene({
+      elements,
+      // Removing something the server refused is not an undo step the user
+      // should be able to walk back into.
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    flushRef.current();
+  }, []);
+
+  /**
+   * ONE PASS OVER THE IMAGES OF THIS BOARD.
+   *
+   * Two directions, both driven by what the elements reference rather than by
+   * any event, which is what makes it safe to run repeatedly and idempotent
+   * when it does:
+   *
+   *   up   - a file this client holds that the server has not been given yet
+   *   down - a file an element references that this client does not hold
+   *
+   * The guard sets make every extra pass free, so it can be triggered
+   * generously (on change, on a remote update, and on a slow interval) without
+   * ever uploading or downloading the same bytes twice.
+   */
+  const syncFiles = useCallback(() => {
+    const scene = apiRef.current;
+    if (!scene) return;
+    const signal = fileTransfers.current?.signal;
+
+    const needed = referencedFileIds(scene.getSceneElementsIncludingDeleted());
+    if (needed.size === 0) return;
+    const local = scene.getFiles();
+
+    for (const fileId of needed) {
+      if (rejectedFileIds.current.has(fileId)) continue;
+      const file = local[fileId] as BinaryFileData | undefined;
+
+      if (file) {
+        // We hold the bytes. Does the server?
+        if (serverFileIds.current.has(fileId)) continue;
+        if (uploadsInFlight.current.has(fileId)) continue;
+        // Uploading is writing. The server enforces this itself on every
+        // request; skipping here only avoids a refusal we already expect.
+        if (!authorityRef.current.canWrite) continue;
+
+        const blob = dataUrlToBlob(file.dataURL);
+        if (!blob) {
+          rejectedFileIds.current.add(fileId);
+          setFileError("That image could not be read, so it was removed.");
+          removeImagesForFiles(new Set([fileId]));
+          continue;
+        }
+
+        uploadsInFlight.current.add(fileId);
+        void uploadBoardFile(boardId, fileId, blob, signal)
+          .then((outcome) => {
+            if (outcome.ok) {
+              serverFileIds.current.add(fileId);
+              return;
+            }
+            if (outcome.retry) return; // the next pass tries again
+            rejectedFileIds.current.add(fileId);
+            if (outcome.message) setFileError(outcome.message);
+            removeImagesForFiles(new Set([fileId]));
+          })
+          .finally(() => uploadsInFlight.current.delete(fileId));
+        continue;
+      }
+
+      // An element from a peer whose bytes we have never seen.
+      if (fetchesInFlight.current.has(fileId)) continue;
+      const attempts = fetchAttempts.current.get(fileId) ?? 0;
+      if (attempts >= MAX_FILE_FETCH_ATTEMPTS) continue;
+      fetchAttempts.current.set(fileId, attempts + 1);
+
+      fetchesInFlight.current.add(fileId);
+      void fetchBoardFile(boardId, fileId, signal)
+        .then(async (outcome) => {
+          if (!outcome.ok) {
+            // A 404 is normal for a moment: the peer who pasted the image may
+            // still be uploading it. Anything else is final for this file.
+            if (!outcome.retry) {
+              fetchAttempts.current.set(fileId, MAX_FILE_FETCH_ATTEMPTS);
+            }
+            return;
+          }
+          const dataURL = await blobToDataUrl(outcome.blob);
+          serverFileIds.current.add(fileId);
+          apiRef.current?.addFiles([
+            {
+              id: fileId,
+              mimeType: outcome.blob.type,
+              dataURL,
+              created: Date.now(),
+            } as BinaryFileData,
+          ]);
+        })
+        .catch(() => {})
+        .finally(() => fetchesInFlight.current.delete(fileId));
+    }
+  }, [boardId, removeImagesForFiles]);
+
+  /** Coalesces the bursts of `onChange` a single paste produces. */
+  const scheduleFileSync = useCallback(() => {
+    if (fileSyncTimer.current) return;
+    fileSyncTimer.current = setTimeout(() => {
+      fileSyncTimer.current = null;
+      syncFiles();
+    }, FILE_SYNC_DEBOUNCE_MS);
+  }, [syncFiles]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fileTransfers.current = controller;
+    const timer = setInterval(syncFiles, FILE_SYNC_INTERVAL_MS);
+    return () => {
+      clearInterval(timer);
+      if (fileSyncTimer.current) clearTimeout(fileSyncTimer.current);
+      fileSyncTimer.current = null;
+      controller.abort();
+      fileTransfers.current = null;
+    };
+  }, [syncFiles]);
 
   /**
    * Merges the shared document into the local scene. `reconcileElements` is
@@ -223,7 +440,11 @@ export function BoardCanvasScene({
       // A remote edit is not this user's undo history.
       captureUpdate: CaptureUpdateAction.NEVER,
     });
-  }, []);
+
+    // An image element may have just arrived without its bytes: they were never
+    // in the document. Fetch whatever this client is now missing.
+    scheduleFileSync();
+  }, [scheduleFileSync]);
 
   // One session for the lifetime of the board page. `onBind` runs again after
   // a forced resynchronisation, because the document object is replaced.
@@ -350,13 +571,21 @@ export function BoardCanvasScene({
     setLastChangeAt(Date.now());
   }, []);
 
+  // `removeImagesForFiles` is defined above this and has to broadcast the
+  // deletion it makes. Reaching it through a ref keeps both callbacks stable
+  // for the lifetime of the page, which is what stops a re-created callback
+  // from rebuilding the session effect and reconnecting the socket.
+  flushRef.current = flushLocalChanges;
+
   const handleChange = useCallback(() => {
+    // The bytes of a pasted image are local-only until this runs.
+    scheduleFileSync();
     if (flushTimer.current) return;
     flushTimer.current = setTimeout(() => {
       flushTimer.current = null;
       flushLocalChanges();
     }, BROADCAST_THROTTLE_MS);
-  }, [flushLocalChanges]);
+  }, [flushLocalChanges, scheduleFileSync]);
 
   useEffect(
     () => () => {
@@ -408,6 +637,9 @@ export function BoardCanvasScene({
       try {
         const elements = scene.getSceneElements();
         const appState = scene.getAppState();
+        // Images are only ever in the export if this client has actually
+        // fetched their bytes, which the sync pass above is what guarantees:
+        // the document alone carries file ids, never pixels.
         const files: BinaryFiles = scene.getFiles();
         const name = `${slugify(boardTitle)}.${format}`;
 
@@ -560,13 +792,28 @@ export function BoardCanvasScene({
             />
           </div>
 
-          {refusedReason ? (
-            <p className="board-refused" role="status">
-              The server refused your last change: this board is now{" "}
-              <strong>{refusedReason}</strong>. The board was reloaded from the
-              server, so your change was not saved.
-            </p>
-          ) : null}
+          <div className="board-notices">
+            {refusedReason ? (
+              <p className="board-refused" role="status">
+                The server refused your last change: this board is now{" "}
+                <strong>{refusedReason}</strong>. The board was reloaded from
+                the server, so your change was not saved.
+              </p>
+            ) : null}
+
+            {fileError ? (
+              <p className="board-refused" role="status">
+                {fileError}{" "}
+                <button
+                  type="button"
+                  className="board-refused-dismiss"
+                  onClick={() => setFileError(null)}
+                >
+                  Dismiss
+                </button>
+              </p>
+            ) : null}
+          </div>
 
           <div className="board-conn">
             <span className={connectionDotClass} aria-hidden="true" />

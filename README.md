@@ -60,6 +60,11 @@ round-trips and rehydration after a restart, presence, the whole
 `board_sessions` lifecycle, and the live status push — a freeze and a later
 unfreeze both reaching a client that never reloads.
 
+`tests/api/` drives the image routes with real `Request` objects, real
+multipart bodies and real session cookies. The route files under `app/api/` are
+three-line adapters over the handlers those tests call, so the authorisation
+under test is the shipped one.
+
 ## Other commands
 
 | Command               | What it does                                         |
@@ -105,6 +110,7 @@ docker compose -f docker-compose.prod.yml run --rm \
 | `board_members`   | Who is assigned to a board (composite PK).                   |
 | `board_sessions`  | Participation log: one row per websocket connection.         |
 | `board_snapshots` | Yjs document state (`bytea`), append-only.                   |
+| `board_files`     | Bytes of images pasted onto a board. Keyed by (board, file). |
 | `sessions`        | Auth sessions. The stored id is a SHA-256 of the cookie token.|
 
 ### Board status is the authority
@@ -172,7 +178,7 @@ would render it in the fallback stack.
 ## Layout
 
 ```
-app/                 Routes. (app)/ is the authenticated shell.
+app/                 Routes. (app)/ is the authenticated shell, api/ the JSON+bytes one.
 components/          Shared UI, including the Excalidraw canvas.
 lib/auth/            Passwords, sessions, cookies, guards.
 lib/boards/          Board authority rules, queries, Yjs snapshots.
@@ -291,6 +297,53 @@ tab dies silently. A client whose write was refused reconnects, which closes
 its row and opens a new one — the same user then shows two sessions, which is
 accurate: they were two connections.
 
+### Images
+
+Excalidraw splits an image in two: the element (position, size, `fileId`) and
+the bytes. The element is an element like any other and has always synced
+through the shared `elements` map. **The bytes deliberately never enter the Yjs
+document.** A 2 MB screenshot encoded into the CRDT would be broadcast to all
+25 students, rewritten into every `board_snapshots` row on every save, and
+downloaded again in full by every late joiner. So only the `fileId` travels —
+and it already did.
+
+The bytes go over HTTP instead, into `board_files`:
+
+| Route                                    | Requires   | Why                                                   |
+| ---------------------------------------- | ---------- | ----------------------------------------------------- |
+| `POST /api/boards/:id/files`             | `canWrite` | Uploading is writing. A frozen or read-only board refuses it. |
+| `GET /api/boards/:id/files/:fileId`      | `canView`  | Freezing a board stops writes, not the images on it.  |
+
+Both re-read `getBoardAccess` on every request — there is no cached verdict and
+nothing in the request body is an input to the decision, exactly as on the
+websocket. Both keep the property that a non-member and a board that does not
+exist are the same answer, byte for byte; a missing *file* is that same answer
+too, so ids cannot be enumerated either. Uploads record `created_by`, so an
+image is as attributable as any other edit.
+
+The primary key is `(board_id, file_id)`: Excalidraw derives `file_id` from the
+content, so the same picture on two boards would otherwise be one row shared
+across two different authorisation domains. Re-uploading a `file_id` is
+idempotent — the same id is the same bytes, and two people pasting the same
+screenshot at once must not collide.
+
+**SVG is refused.** An SVG is a document, not a picture: it can carry
+`<script>`, and a browser executes that when it renders one served inline from
+our own origin — a stored XSS against the whole class, session cookie included.
+The allowlist is `png`, `jpeg`, `webp` and `gif`, the format is sniffed from
+the bytes rather than taken from the client's `Content-Type` (so an SVG renamed
+`.png` is refused too), and downloads carry `nosniff` plus a sandboxing CSP as
+a second line. Excalidraw's own shapes stay vectorial regardless; this only
+restricts what may be pasted in as an image.
+
+On the client, one pass over the scene uploads what the server does not have
+and fetches what this browser is missing, driven by which files the live image
+elements reference rather than by any event. An element reaches a peer before
+its bytes finish uploading, so a 404 on the way down is expected for a moment
+and retried. An upload the server will never accept — too large, wrong format,
+board frozen — takes the orphaned element off the canvas and says why, rather
+than leaving everyone else with a picture frame that can never load.
+
 ### Export
 
 The canvas exports to PNG and SVG through Excalidraw's own helpers, named after
@@ -310,6 +363,7 @@ a CDN, so a classroom with a flaky network still renders correctly.
 | `YJS_STATUS_POLL_MS`       | `3000`               | How fast a status change is pushed  |
 | `YJS_REAPER_MS`            | `60000`              | How often stale sessions are swept  |
 | `YJS_STALE_AFTER_SECONDS`  | `120`                | Silence before a session is closed  |
+| `BOARD_FILE_MAX_BYTES`     | `5242880`            | Largest single image upload (5 MiB) |
 
 `NEXT_PUBLIC_YJS_URL` is inlined into the client bundle at build time, so the
 production compose file passes it as a build argument as well as an env var.
