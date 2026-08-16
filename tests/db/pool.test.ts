@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import { TEST_DATABASE_URL } from "../setup/test-env";
 
@@ -16,20 +16,20 @@ import { TEST_DATABASE_URL } from "../setup/test-env";
  */
 describe("the application database handle", () => {
   let observer: ReturnType<typeof postgres>;
-  const originalNodeEnv = process.env.NODE_ENV;
 
   beforeAll(() => {
-    process.env.DATABASE_URL = TEST_DATABASE_URL;
+    vi.stubEnv("DATABASE_URL", TEST_DATABASE_URL);
     // The leak lived behind `NODE_ENV === "production"`, so a test running as
     // "test" would have passed against the broken code. Exercise the branch
-    // that actually failed.
-    process.env.NODE_ENV = "production";
+    // that actually failed. `vi.stubEnv` rather than assignment: NODE_ENV is
+    // typed read-only, and assigning it fails `tsc --noEmit`.
+    vi.stubEnv("NODE_ENV", "production");
     // A separate client, so counting does not disturb what is being counted.
     observer = postgres(TEST_DATABASE_URL, { max: 1 });
   });
 
   afterAll(async () => {
-    process.env.NODE_ENV = originalNodeEnv;
+    vi.unstubAllEnvs();
     await observer.end({ timeout: 5 });
   });
 

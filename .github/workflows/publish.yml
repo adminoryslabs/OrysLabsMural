@@ -26,7 +26,41 @@ env:
   YJS_URL: ${{ github.event.inputs.yjs_url || 'wss://collab.oryslabs.com/yjs' }}
 
 jobs:
+  # Nothing is built or deployed until this passes. A broken `tsc` once reached
+  # production because the pipeline only ever built the image, and `next build`
+  # does not typecheck the test suite.
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The suite drops, recreates and migrates this database on every run.
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/mural_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx eslint .
+      # Against a real PostgreSQL, never mocked — see CLAUDE.md.
+      - run: npm test
+
   build:
+    needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: read
