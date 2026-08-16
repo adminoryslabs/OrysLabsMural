@@ -5,7 +5,8 @@
  * icon font for a dozen glyphs would ship a font file and a second loading
  * state for no benefit, so these are inline paths keeping the same glyph
  * meanings: `arrow_forward`, `arrow_back`, `logout`, `add`, `grid_view`,
- * `view_list`, `group`, `groups`, `ac_unit`, `visibility`, `history`.
+ * `view_list`, `group`, `groups`, `ac_unit`, `visibility`, `history`,
+ * `sticky_note_2`.
  *
  * They inherit `currentColor` and are `aria-hidden` by default: every icon in
  * this app sits next to a text label or inside a button with an accessible
@@ -154,6 +155,16 @@ export function HistoryIcon(props: IconProps) {
       <path d="M3.6 12a8.4 8.4 0 1 0 2.6-6.1" />
       <path d="M3.2 4.4v4.2h4.2" />
       <path d="M12 7.6V12l3.2 2" />
+    </Svg>
+  );
+}
+
+/** `sticky_note_2`: a square with its bottom-right corner folded away. */
+export function StickyNoteIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 4.8h16v9.4L14.2 20H4z" />
+      <path d="M20 14.2h-5.8V20" />
     </Svg>
   );
 }

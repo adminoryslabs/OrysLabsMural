@@ -4,9 +4,20 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { changeBoardStatusAction } from "@/app/(app)/teacher/actions";
 import { Avatar } from "./avatar";
-import { AcUnitIcon, ArrowBackIcon, GroupIcon, VisibilityIcon } from "./icons";
+import {
+  AcUnitIcon,
+  ArrowBackIcon,
+  GroupIcon,
+  StickyNoteIcon,
+  VisibilityIcon,
+} from "./icons";
 import { StatusBadge } from "./status-badge";
 import type { BoardStatus } from "@/lib/db/schema";
+import {
+  STICKY_NOTE_COLORS,
+  STICKY_NOTE_SHORTCUT_LABEL,
+  type StickyNoteColor,
+} from "@/lib/collab/sticky-note";
 
 const ORDER: readonly BoardStatus[] = ["active", "frozen", "readonly"];
 
@@ -116,6 +127,68 @@ export function BoardStateNote({
 }
 
 /**
+ * THE STICKY-NOTE TOOL.
+ *
+ * It lives in our own chrome rather than in Excalidraw's toolbar, which is
+ * internal and off limits: no fork, no patching. The button drops a note in the
+ * middle of the current view, and the swatches choose the colour of the next
+ * one — repainting the selected notes as well, which is the only way to change
+ * your mind about a note you have just made without hunting through
+ * Excalidraw's own property panel.
+ *
+ * `disabled` is the live authority the collaboration server last pushed. It is
+ * the UI reflecting the server's answer and nothing more: the websocket server
+ * re-reads `getBoardAccess` for every update, so a student who re-enables this
+ * button in devtools gets the write dropped anyway.
+ */
+export function StickyNoteTool({
+  color,
+  onColorChange,
+  onCreate,
+  disabled,
+}: {
+  color: StickyNoteColor;
+  onColorChange: (color: StickyNoteColor) => void;
+  onCreate: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="sticky-tool" role="group" aria-label="Sticky notes">
+      <button
+        className="sticky-tool-add"
+        type="button"
+        disabled={disabled}
+        onClick={onCreate}
+        title={
+          disabled
+            ? "You cannot edit this board right now"
+            : `Add a sticky note (${STICKY_NOTE_SHORTCUT_LABEL})`
+        }
+      >
+        <StickyNoteIcon size={17} />
+        <span>Note</span>
+      </button>
+
+      <div className="sticky-tool-swatches">
+        {STICKY_NOTE_COLORS.map((entry) => (
+          <button
+            key={entry.value}
+            className="sticky-swatch"
+            type="button"
+            disabled={disabled}
+            aria-pressed={entry.value === color}
+            style={{ background: entry.value }}
+            onClick={() => onColorChange(entry.value)}
+          >
+            <span className="sr-only">{entry.label} sticky notes</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * The top bar. `status` is always the live authority state, never the value the
  * page was rendered with, so a freeze reaching a silent client repaints it.
  */
@@ -128,6 +201,7 @@ export function BoardTopBar({
   presence,
   panelOpen,
   onTogglePanel,
+  tools,
 }: {
   boardId: string;
   title: string;
@@ -137,6 +211,8 @@ export function BoardTopBar({
   presence: React.ReactNode;
   panelOpen: boolean;
   onTogglePanel: () => void;
+  /** Board tools, rendered in the empty space between title and presence. */
+  tools?: React.ReactNode;
 }) {
   return (
     <div className="board-topbar">
@@ -145,6 +221,8 @@ export function BoardTopBar({
         <span className="sr-only">Back to the boards</span>
       </Link>
       <p className="board-topbar-title">{title}</p>
+
+      {tools}
 
       <div className="board-topbar-right">
         {presence}
