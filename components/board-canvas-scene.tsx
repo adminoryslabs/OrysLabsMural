@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CaptureUpdateAction,
   Excalidraw,
+  convertToExcalidrawElements,
   exportToBlob,
   exportToSvg,
   reconcileElements,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
@@ -26,8 +28,20 @@ import {
   BoardSessionPanel,
   BoardStateNote,
   BoardTopBar,
+  StickyNoteTool,
   type RosterEntry,
 } from "@/components/board-chrome";
+import {
+  DEFAULT_STICKY_NOTE_COLOR,
+  STICKY_NOTE_COLOR_STORAGE_KEY,
+  readStickyNoteColor,
+  recolourSelectedStickyNotes,
+  shouldCreateStickyNote,
+  stickyNoteOrigin,
+  stickyNoteSkeleton,
+  viewportCentre,
+  type StickyNoteColor,
+} from "@/lib/collab/sticky-note";
 import type { BoardStatus } from "@/lib/db/schema";
 import {
   BoardSession,
@@ -174,6 +188,10 @@ export function BoardCanvasScene({
   const [fileError, setFileError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
+  /** Colour of the next sticky note. Restored from localStorage on mount. */
+  const [stickyColor, setStickyColor] = useState<StickyNoteColor>(
+    DEFAULT_STICKY_NOTE_COLOR,
+  );
   /** Last time the document changed, local or remote. Drives "saved Ns ago". */
   const [lastChangeAt, setLastChangeAt] = useState<number | null>(null);
   /** Ticks so "Editing" and "saved Ns ago" age without a document event. */
@@ -230,9 +248,25 @@ export function BoardCanvasScene({
    * and reconnect the socket on every freeze.
    */
   const authorityRef = useRef<BoardAuthorityState>({ status, canWrite });
+  /**
+   * The chosen sticky colour, readable from `createStickyNote` without making
+   * that callback depend on it — a changing dependency would re-bind the
+   * document-level shortcut listener on every swatch click.
+   */
+  const stickyColorRef = useRef<StickyNoteColor>(DEFAULT_STICKY_NOTE_COLOR);
+  /**
+   * Whether this client may edit right now: the live authority, minus the local
+   * latch set when the server refused a write. Same value the canvas's
+   * `viewModeEnabled` uses, so the sticky tool can never be live on a canvas
+   * that is not. Enforcement still happens on the server, every update.
+   */
+  const canEditRef = useRef(canWrite);
+  /** The element Excalidraw renders into. Only the synthetic Enter reads it. */
+  const hostRef = useRef<HTMLDivElement | null>(null);
 
   apiRef.current = api;
   authorityRef.current = authority;
+  stickyColorRef.current = stickyColor;
 
   /** Set once `flushLocalChanges` exists below; see the note on `flushRef`. */
   const flushRef = useRef<() => void>(() => {});
@@ -619,6 +653,176 @@ export function BoardCanvasScene({
     });
   }, []);
 
+  // ---- Sticky notes ------------------------------------------------------
+
+  useEffect(() => {
+    setStickyColor(
+      readStickyNoteColor(
+        window.localStorage.getItem(STICKY_NOTE_COLOR_STORAGE_KEY),
+      ),
+    );
+  }, []);
+
+  /**
+   * THE FRAGILE PART, AND THE ONLY ONE.
+   *
+   * Excalidraw enters text editing on `Enter` when exactly one valid text
+   * container is selected — that is its own binding, in its own `onKeyDown`.
+   * There is no public way to ask for it: `ExcalidrawImperativeAPI` exposes
+   * `updateScene`, `getAppState`, `getSceneElements`, `history`, `scrollToContent`
+   * and friends, and nothing that opens the editor. So we synthesise the key
+   * press its handler is already listening for.
+   *
+   * Everything about this is best effort:
+   *
+   *   - it is deferred to the next frame, because the selection we just asked
+   *     for is React state and is not committed yet when this call returns;
+   *   - it bails if the selection did not land, so it can never type into the
+   *     wrong element;
+   *   - it never throws, and it is never awaited or checked by the caller.
+   *
+   * IF A FUTURE EXCALIDRAW UPGRADE BREAKS THIS: nothing else breaks. The note is
+   * already inserted and selected, and the user presses Enter themselves — which
+   * is Excalidraw's documented behaviour and one keystroke. Delete this function
+   * and its call, or replace it with the imperative API if one ever appears.
+   * Do not "fix" it by reaching into Excalidraw's internals.
+   */
+  const tryEnterTextEditing = useCallback((noteId: string) => {
+    requestAnimationFrame(() => {
+      try {
+        const scene = apiRef.current;
+        const container =
+          hostRef.current?.querySelector<HTMLElement>(".excalidraw-container");
+        if (!scene || !container) return;
+
+        // Only if the note really is the one and only selection.
+        const selected = scene.getAppState().selectedElementIds;
+        const ids = Object.keys(selected).filter((id) => selected[id]);
+        if (ids.length !== 1 || ids[0] !== noteId) return;
+
+        container.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Enter",
+            code: "Enter",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      } catch {
+        // Degrade silently: the note stays selected and the user presses Enter.
+      }
+    });
+  }, []);
+
+  /**
+   * Two gestures instead of four: this is the whole point of the feature.
+   *
+   * The note is built by `convertToExcalidrawElements` rather than by hand, so
+   * Excalidraw generates `version`, `versionNonce` and `seed` — the three fields
+   * the reconciliation in `applyRemote` uses to decide whose copy of an element
+   * wins. It is inserted with `updateScene`, which fires `onChange`, which is
+   * the existing coalesce-and-broadcast path: a note reaches the class exactly
+   * the way a rectangle does, and there is no new synchronisation code here.
+   */
+  const createStickyNote = useCallback(() => {
+    const scene = apiRef.current;
+    if (!scene) return;
+    // A reflection of the server's answer, not the decision: the collaboration
+    // server drops the update anyway if this board is not writable.
+    if (!canEditRef.current) return;
+
+    const appState = scene.getAppState();
+    // Where the user is actually looking. The scene origin would drop notes off
+    // screen for anyone who has scrolled.
+    const centre = viewportCoordsToSceneCoords(
+      viewportCentre(appState),
+      appState,
+    );
+    const id = crypto.randomUUID();
+
+    const created = convertToExcalidrawElements(
+      [stickyNoteSkeleton(stickyColorRef.current, stickyNoteOrigin(centre), id)],
+      // Keep the id we generated: it is how the note is selected below and how
+      // the text editing attempt knows it is looking at the right element.
+      { regenerateIds: false },
+    );
+    if (created.length === 0) return;
+
+    scene.updateScene({
+      elements: [...scene.getSceneElementsIncludingDeleted(), ...created],
+      appState: { selectedElementIds: { [id]: true } },
+      // Creating a note is a step the user should be able to undo.
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+
+    tryEnterTextEditing(id);
+  }, [tryEnterTextEditing]);
+
+  /**
+   * A swatch click always sets the colour of the next note, and repaints the
+   * sticky notes selected right now. The rule itself is in
+   * `recolourSelectedStickyNotes`, which returns null when nothing would change
+   * so a click on the colour a note already has costs the class no broadcast.
+   */
+  const chooseStickyColor = useCallback((color: StickyNoteColor) => {
+    setStickyColor(color);
+    window.localStorage.setItem(STICKY_NOTE_COLOR_STORAGE_KEY, color);
+
+    const scene = apiRef.current;
+    if (!scene) return;
+    if (!canEditRef.current) return;
+
+    const appState = scene.getAppState();
+    const next = recolourSelectedStickyNotes(
+      scene.getSceneElementsIncludingDeleted(),
+      appState.selectedElementIds,
+      color,
+      nextVersionNonce,
+    );
+    if (!next) return;
+
+    scene.updateScene({
+      elements: next,
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+  }, []);
+
+  /**
+   * The shortcut. Bound on `document` so it works wherever the focus is, and
+   * gated by `shouldCreateStickyNote`, which is what stops a note appearing for
+   * every `n` a student types inside another note.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const appState = apiRef.current?.getAppState();
+      // Null until the canvas exists, which the guard treats as "do not act":
+      // without it there is no way to know whether a note is being typed into.
+      const editing = appState
+        ? {
+            editingTextElement: appState.editingTextElement,
+            editingFrame: appState.editingFrame,
+            editingLinearElement: appState.editingLinearElement,
+            openDialog: appState.openDialog,
+          }
+        : null;
+
+      if (
+        !shouldCreateStickyNote(event, {
+          canWrite: authorityRef.current.canWrite,
+          editing,
+        })
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      createStickyNote();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [createStickyNote]);
+
   const handlePointerUpdate = useCallback(
     (payload: { pointer: { x: number; y: number } }) => {
       const now = Date.now();
@@ -678,6 +882,7 @@ export function BoardCanvasScene({
   }, [status, canWrite]);
 
   const readOnly = !authority.canWrite || refusedReason !== null;
+  canEditRef.current = !readOnly;
 
   /**
    * The roster: every board member, plus anyone connected who is not one (a
@@ -755,6 +960,16 @@ export function BoardCanvasScene({
         backHref={canAdminister ? "/teacher" : "/boards"}
         panelOpen={panelOpen}
         onTogglePanel={togglePanel}
+        tools={
+          <StickyNoteTool
+            color={stickyColor}
+            onColorChange={chooseStickyColor}
+            onCreate={createStickyNote}
+            // The live authority, plus the local "your last write was refused"
+            // latch that already puts the whole canvas in view mode.
+            disabled={readOnly}
+          />
+        }
         presence={
           <PresenceRow
             people={onlinePeople}
@@ -771,7 +986,7 @@ export function BoardCanvasScene({
 
       <div className="board-body">
         <div className="board-canvas-surface">
-          <div className="excalidraw-host">
+          <div className="excalidraw-host" ref={hostRef}>
             <Excalidraw
               excalidrawAPI={setApi}
               onChange={handleChange}

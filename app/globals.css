@@ -873,6 +873,82 @@ form.landing-form input[type="password"] {
   min-width: 120px;
 }
 
+/* The sticky-note tool: it lives in our chrome, in the empty space between the
+   board title and the presence group. Excalidraw's own toolbar is internal and
+   is never touched. */
+.sticky-tool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.sticky-tool-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sticky-tool-add:hover:not(:disabled) {
+  background: var(--surface-selected);
+}
+
+.sticky-tool-add:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  cursor: default;
+}
+
+.sticky-tool-swatches {
+  display: flex;
+  gap: 4px;
+}
+
+/* Square, like every other affordance in this interface. The pressed one is
+   marked with a ring rather than a tick: at 16px a glyph is unreadable. */
+.sticky-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+}
+
+.sticky-swatch[aria-pressed="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.sticky-swatch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@media (max-width: 860px) {
+  /* The title and the presence group win the space first. */
+  .sticky-tool-swatches {
+    display: none;
+  }
+
+  .sticky-tool-add span:not(.sr-only) {
+    display: none;
+  }
+
+  .sticky-tool-add {
+    padding: 0 8px;
+  }
+}
+
 .board-topbar-right {
   display: flex;
   align-items: center;
