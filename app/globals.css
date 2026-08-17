@@ -807,7 +807,26 @@ form.landing-form input[type="password"] {
 
 .board-row-action {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 4px;
+}
+
+/* "Manage" sits beside the state control, in the same quiet language. */
+.board-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-card-actions .btn-quiet,
+.board-row-action .btn-quiet {
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line);
 }
 
 @media (max-width: 720px) {

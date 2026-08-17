@@ -125,7 +125,8 @@ export default async function ManageClassroomPage({
         <div className="card">
           <h2>Boards ({boards.length})</h2>
           <p className="muted">
-            A board is assigned to a classroom from the board&apos;s own page.
+            To teach a board to this classroom, open <Link href="/teacher">Boards</Link>{" "}
+            and use <strong>Manage</strong> on the board you want.
           </p>
           {boards.length === 0 ? (
             <p className="muted">
