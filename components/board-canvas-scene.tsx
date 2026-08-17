@@ -28,6 +28,7 @@ import {
   BoardSessionPanel,
   BoardStateNote,
   BoardTopBar,
+  IconTool,
   StickyNoteTool,
   type RosterEntry,
 } from "@/components/board-chrome";
@@ -42,6 +43,8 @@ import {
   viewportCentre,
   type StickyNoteColor,
 } from "@/lib/collab/sticky-note";
+import { findIcon, iconOrigin, iconUrl, ICON_SIZE } from "@/lib/collab/icon-tool";
+import { image as imageElement } from "@/lib/collab/elements";
 import type { BoardStatus } from "@/lib/db/schema";
 import {
   BoardSession,
@@ -759,6 +762,73 @@ export function BoardCanvasScene({
   }, [tryEnterTextEditing]);
 
   /**
+   * Places one catalog icon at the centre of the current view.
+   *
+   * The bytes come from our own static asset (`public/icons/<name>.png`),
+   * registered locally with `scene.addFiles` exactly like a pasted image
+   * would be. No upload call happens here: `syncFiles` already scans the
+   * scene for a file this client holds that the server does not, on every
+   * change and on its own interval, and uploads it through the existing
+   * `POST /api/boards/:boardId/files` route — the same path a pasted picture
+   * takes. Placing the element is what triggers that scan, via `onChange`.
+   */
+  const createIcon = useCallback((name: string) => {
+    const scene = apiRef.current;
+    if (!scene) return;
+    if (!canEditRef.current) return;
+
+    const icon = findIcon(name);
+    if (!icon) return;
+
+    void fetch(iconUrl(name))
+      .then((response) => {
+        // `fetch` only rejects on a network failure, never on a 404 — an
+        // unchecked status would let a missing catalog asset decode straight
+        // into `blobToDataUrl` and place a corrupt "icon" for the whole class.
+        if (!response.ok) {
+          throw new Error(`Icon "${name}" could not be loaded (${response.status}).`);
+        }
+        return response.blob();
+      })
+      .then(async (blob) => {
+        const dataURL = await blobToDataUrl(blob);
+        const live = apiRef.current;
+        if (!live || !canEditRef.current) return;
+
+        live.addFiles([
+          {
+            id: icon.fileId,
+            mimeType: "image/png",
+            dataURL,
+            created: Date.now(),
+          } as BinaryFileData,
+        ]);
+
+        const appState = live.getAppState();
+        const centre = viewportCoordsToSceneCoords(
+          viewportCentre(appState),
+          appState,
+        );
+        const origin = iconOrigin(centre);
+        const element = imageElement(
+          { x: origin.x, y: origin.y, w: ICON_SIZE, h: ICON_SIZE },
+          icon.fileId,
+        );
+
+        live.updateScene({
+          elements: [...live.getSceneElementsIncludingDeleted(), element],
+          appState: { selectedElementIds: { [element.id]: true } },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+      })
+      .catch(() => {
+        // Same failure contract `syncFiles` uses for an unreadable image: tell
+        // the user rather than leaving the click looking like it did nothing.
+        setFileError("That icon could not be loaded.");
+      });
+  }, []);
+
+  /**
    * A swatch click always sets the colour of the next note, and repaints the
    * sticky notes selected right now. The rule itself is in
    * `recolourSelectedStickyNotes`, which returns null when nothing would change
@@ -961,14 +1031,17 @@ export function BoardCanvasScene({
         panelOpen={panelOpen}
         onTogglePanel={togglePanel}
         tools={
-          <StickyNoteTool
-            color={stickyColor}
-            onColorChange={chooseStickyColor}
-            onCreate={createStickyNote}
-            // The live authority, plus the local "your last write was refused"
-            // latch that already puts the whole canvas in view mode.
-            disabled={readOnly}
-          />
+          <>
+            <StickyNoteTool
+              color={stickyColor}
+              onColorChange={chooseStickyColor}
+              onCreate={createStickyNote}
+              // The live authority, plus the local "your last write was refused"
+              // latch that already puts the whole canvas in view mode.
+              disabled={readOnly}
+            />
+            <IconTool onSelect={createIcon} disabled={readOnly} />
+          </>
         }
         presence={
           <PresenceRow

@@ -19,6 +19,7 @@ import { WebSocket } from "ws";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session-cookie";
 import { BoardSession } from "@/lib/collab/board-session";
 import { assertWellFormed } from "./elements";
+import { ensureCatalogIconsUploaded } from "./icons";
 import { expandScene, type Shape } from "./skeleton";
 
 const ELEMENTS_KEY = "elements";
@@ -59,6 +60,22 @@ async function main(): Promise<void> {
   // Excalidraw's own reconciliation later, in someone's browser.
   for (const el of scene) {
     assertWellFormed(el as unknown as Record<string, unknown>);
+  }
+
+  // A catalog icon referenced by an `image` shape must exist on the board
+  // before the element pointing at it is written, or every peer gets a
+  // picture frame that never loads. Only fileIds this scene actually places
+  // matter — the check-then-upload happens over plain HTTP, before the
+  // collaboration socket even opens.
+  const imageFileIds = new Set(
+    scene
+      .filter((el): el is typeof el & { fileId: string } => el.type === "image" && !el.isDeleted)
+      .map((el) => el.fileId)
+      .filter((fileId): fileId is string => typeof fileId === "string" && fileId.length > 0),
+  );
+  if (imageFileIds.size > 0) {
+    const appUrl = requiredEnv("MURAL_AGENT_APP_URL");
+    await ensureCatalogIconsUploaded(appUrl, boardId, imageFileIds, cookie);
   }
 
   const CookieWebSocket = class extends WebSocket {
