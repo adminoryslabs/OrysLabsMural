@@ -158,19 +158,30 @@ const renameSchema = z.object({
   title: z.string().trim().min(1).max(120),
 });
 
-export async function renameBoardAction(formData: FormData): Promise<void> {
+export async function renameBoardAction(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const parsed = renameSchema.safeParse({
     boardId: formData.get("boardId"),
     title: formData.get("title"),
   });
   if (!parsed.success) {
-    throw new Error("Invalid board title.");
+    return { error: "Invalid board title." };
   }
 
-  await authorizeBoardAdmin(parsed.data.boardId);
-  await renameBoard(db, parsed.data.boardId, parsed.data.title);
+  try {
+    await authorizeBoardAdmin(parsed.data.boardId);
+    await renameBoard(db, parsed.data.boardId, parsed.data.title);
+  } catch {
+    // Inline, like every other board action. Throwing here replaced the whole
+    // page with an error screen and lost what the teacher had typed.
+    return { error: "The board could not be renamed." };
+  }
+
   revalidatePath("/teacher");
   revalidatePath(`/teacher/boards/${parsed.data.boardId}`);
+  return { message: "Board renamed." };
 }
 
 const membershipSchema = z.object({ boardId: uuid, userId: uuid });
