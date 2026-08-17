@@ -24,6 +24,15 @@ function randInt(): number {
   return Math.floor(Math.random() * 2 ** 31);
 }
 
+/**
+ * Every field `_ExcalidrawElementBase` declares as non-optional, including
+ * `groupIds`/`boundElements` — every element type has them in the real type,
+ * so leaving either out of an arrow or an image is exactly what produces a
+ * silent `undefined` that Excalidraw's own reconciliation crashes on with
+ * "Cannot read properties of undefined (reading 'length')". Callers that need
+ * a non-default value override these keys explicitly; they must never be
+ * absent.
+ */
 function baseFields() {
   return {
     seed: randInt(),
@@ -37,6 +46,8 @@ function baseFields() {
     locked: false,
     angle: 0,
     opacity: 100,
+    groupIds: [] as string[],
+    boundElements: null as { id: string; type: "text" | "arrow" }[] | null,
   };
 }
 
