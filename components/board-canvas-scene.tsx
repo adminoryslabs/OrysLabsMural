@@ -781,7 +781,15 @@ export function BoardCanvasScene({
     if (!icon) return;
 
     void fetch(iconUrl(name))
-      .then((response) => response.blob())
+      .then((response) => {
+        // `fetch` only rejects on a network failure, never on a 404 — an
+        // unchecked status would let a missing catalog asset decode straight
+        // into `blobToDataUrl` and place a corrupt "icon" for the whole class.
+        if (!response.ok) {
+          throw new Error(`Icon "${name}" could not be loaded (${response.status}).`);
+        }
+        return response.blob();
+      })
       .then(async (blob) => {
         const dataURL = await blobToDataUrl(blob);
         const live = apiRef.current;
@@ -812,6 +820,11 @@ export function BoardCanvasScene({
           appState: { selectedElementIds: { [element.id]: true } },
           captureUpdate: CaptureUpdateAction.IMMEDIATELY,
         });
+      })
+      .catch(() => {
+        // Same failure contract `syncFiles` uses for an unreadable image: tell
+        // the user rather than leaving the click looking like it did nothing.
+        setFileError("That icon could not be loaded.");
       });
   }, []);
 
