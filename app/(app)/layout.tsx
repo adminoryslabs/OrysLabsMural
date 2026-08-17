@@ -39,7 +39,7 @@ export default async function AuthenticatedLayout({
       <header className="app-nav">
         <Link className="app-nav-brand" href="/">
           <span className="brand-mark" aria-hidden="true" />
-          <span className="wordmark">OrysLabs Mural</span>
+          <span className="wordmark">OrysLabs Collab</span>
         </Link>
 
         <NavLinks links={navigationFor(user.role)} />
