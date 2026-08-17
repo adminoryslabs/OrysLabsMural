@@ -82,24 +82,37 @@ describe("snapshot persistence", () => {
   });
 
   it("flushes the document when the last client leaves", async () => {
+    // A debounce that can never fire inside this test, so the only way a
+    // snapshot can exist at the end is the flush on the last disconnect —
+    // which is the thing this test claims to prove.
+    await server.close();
+    server = await startTestServer({ snapshotDebounceMs: 60_000 });
+
     const { student, board } = await seedBoardWithMember();
     const cookie = await cookieFor(student.id);
 
     const client = track(createClient(server, board.id, cookie));
     await waitForSync(client);
+
+    // A witness, because the SERVER must be known to hold the update before
+    // anyone disconnects. Setting a shape and destroying in the same tick does
+    // not guarantee the provider flushed it to the socket, and when it did not,
+    // the room had nothing pending and correctly wrote nothing. That read as a
+    // mysterious timeout on CI and never reproduced locally, where the send
+    // always won the race.
+    const witness = track(createClient(server, board.id, cookie));
+    await waitForSync(witness);
+
     client.shapes.set("late", { id: "late" });
-    client.destroy();
-    openClients.length = 0;
+    await waitUntil(() => witness.shapes.has("late"), {
+      label: "the server to have the update",
+    });
+
+    for (const open of openClients.splice(0)) open.destroy();
 
     await waitUntil(() => server.roomCount() === 0, {
       label: "the room to be released",
     });
-
-    // Wait for the snapshot itself, not for the room count. Releasing the room
-    // and finishing the write are two different moments: the count can reach
-    // zero while the insert is still in flight. Asserting straight after the
-    // count passed locally and failed on CI, where the database is slower —
-    // the test was watching a proxy for the condition instead of the condition.
     await waitUntil(
       async () => (await getLatestBoardSnapshot(testDb, board.id)) !== null,
       { label: "the flushed snapshot" },
