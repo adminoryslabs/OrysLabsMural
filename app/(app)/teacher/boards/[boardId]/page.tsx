@@ -21,6 +21,7 @@ import {
   setBoardStatusAction,
 } from "../../actions";
 import { BoardClassroomForm } from "./board-classroom-form";
+import { RenameBoardForm } from "./rename-board-form";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +99,11 @@ export default async function ManageBoardPage({
             </form>
           ))}
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Name</h2>
+        <RenameBoardForm boardId={board.id} title={board.title} />
       </div>
 
       <div className="card">
