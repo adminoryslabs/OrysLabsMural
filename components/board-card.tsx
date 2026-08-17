@@ -10,6 +10,12 @@ export interface BoardCardData {
   href: string;
   /** Pre-formatted on the server, e.g. "7 members". Omitted for students. */
   members?: string;
+  /**
+   * The cohort this board is taught to, or null when it is unassigned. It is
+   * shown because it is the answer to "who can open this", which on a classroom
+   * board is no longer the member list.
+   */
+  classroom?: string | null;
   /** Pre-formatted on the server, e.g. "Updated 18:02". */
   updated: string;
   /**
@@ -25,6 +31,12 @@ export interface BoardCardData {
 function Meta({ board }: { board: BoardCardData }) {
   return (
     <>
+      {board.classroom ? (
+        <>
+          <span className="board-card-classroom">{board.classroom}</span>
+          {" · "}
+        </>
+      ) : null}
       {board.members ? (
         <>
           {board.manageHref ? (

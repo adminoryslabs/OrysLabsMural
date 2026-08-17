@@ -14,6 +14,11 @@ function navigationFor(role: "teacher" | "student"): NavLink[] {
   if (role === "teacher") {
     return [
       { href: "/teacher", label: "Boards", match: "/teacher" },
+      {
+        href: "/teacher/classrooms",
+        label: "Classrooms",
+        match: "/teacher/classrooms",
+      },
       { href: "/teacher/users", label: "Students", match: "/teacher/users" },
       { href: "/participation", label: "Participation", match: "/participation" },
     ];

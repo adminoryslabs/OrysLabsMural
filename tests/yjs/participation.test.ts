@@ -7,7 +7,7 @@ import {
 import { boardSessions } from "@/lib/db/schema";
 import type { YjsServer } from "@/yjs-server/server";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 import {
   cookieFor,
   createClient,
@@ -44,7 +44,7 @@ afterEach(async () => {
 
 describe("board session lifecycle", () => {
   it("opens a session row when a client connects", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -60,7 +60,7 @@ describe("board session lifecycle", () => {
   });
 
   it("heartbeats last_seen_at while the connection is idle", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -84,7 +84,7 @@ describe("board session lifecycle", () => {
   });
 
   it("attributes edits to the connection that made them", async () => {
-    const { teacher, student, board } = await seedClassroom();
+    const { teacher, student, board } = await seedBoardWithMember();
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -115,7 +115,7 @@ describe("board session lifecycle", () => {
   });
 
   it("does not count a rejected update as an edit", async () => {
-    const { student, board } = await seedClassroom("frozen");
+    const { student, board } = await seedBoardWithMember("frozen");
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -132,7 +132,7 @@ describe("board session lifecycle", () => {
   });
 
   it("closes the session when the client disconnects", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -154,7 +154,7 @@ describe("board session lifecycle", () => {
   });
 
   it("closes every open session when the server shuts down", async () => {
-    const { teacher, student, board } = await seedClassroom();
+    const { teacher, student, board } = await seedBoardWithMember();
     const a = track(createClient(server, board.id, await cookieFor(student.id)));
     const b = track(createClient(server, board.id, await cookieFor(teacher.id)));
     await waitForSync(a);
@@ -171,7 +171,7 @@ describe("board session lifecycle", () => {
   });
 
   it("feeds the instructor's participation report", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -195,7 +195,7 @@ describe("board session lifecycle", () => {
 
 describe("stale session reaper", () => {
   it("closes sessions whose heartbeat went silent", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -230,7 +230,7 @@ describe("stale session reaper", () => {
       heartbeatIntervalMs: 100_000, // never heartbeats during this test
     });
 
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );

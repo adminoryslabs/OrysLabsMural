@@ -1,15 +1,39 @@
-import { and, count, desc, eq, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   boardMembers,
   boardStatus,
   boards,
+  classroomMembers,
+  classrooms,
   users,
   type Board,
   type BoardStatus,
   type UserRole,
 } from "@/lib/db/schema";
 import { canViewBoard, canWriteToBoard } from "./authority";
+
+/**
+ * The join that derives classroom membership for ONE user on the board being
+ * selected. Written once because it is the security boundary: every query that
+ * decides access has to resolve it the same way.
+ *
+ * When `boards.classroom_id` is null the equality is null and the join matches
+ * nothing, which is exactly what an unassigned board should do.
+ */
+function classroomMembershipJoin(userId: string) {
+  return and(
+    eq(classroomMembers.classroomId, boards.classroomId),
+    eq(classroomMembers.userId, userId),
+  );
+}
+
+function boardMembershipJoin(userId: string) {
+  return and(
+    eq(boardMembers.boardId, boards.id),
+    eq(boardMembers.userId, userId),
+  );
+}
 
 export function isBoardStatus(value: unknown): value is BoardStatus {
   return (
@@ -21,6 +45,8 @@ export function isBoardStatus(value: unknown): value is BoardStatus {
 export interface CreateBoardInput {
   title: string;
   ownerId: string;
+  /** Optional cohort. Null or absent means an unassigned board. */
+  classroomId?: string | null;
 }
 
 export async function createBoard(
@@ -37,7 +63,11 @@ export async function createBoard(
 
   const [created] = await db
     .insert(boards)
-    .values({ title, ownerId: input.ownerId })
+    .values({
+      title,
+      ownerId: input.ownerId,
+      classroomId: input.classroomId ?? null,
+    })
     .returning();
   if (!created) {
     throw new Error("The board could not be created.");
@@ -195,12 +225,101 @@ export async function listBoardMembers(
     .orderBy(users.displayName);
 }
 
+export interface BoardRosterRow {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  /** True when the row comes from `board_members` rather than the classroom. */
+  isExplicitMember: boolean;
+}
+
+/**
+ * EVERYONE who can reach this board: the classroom roster plus the explicit
+ * members, as one deduplicated list. This is what the board's people panel must
+ * show — listing only `board_members` on a classroom board would tell a class
+ * of twenty-five that nobody is assigned.
+ *
+ * Two indexed reads merged in memory rather than one clever UNION: a cohort is
+ * twenty-five people, and a reader can see at a glance which list won.
+ */
+export async function listBoardRoster(
+  db: Database,
+  boardId: string,
+): Promise<BoardRosterRow[]> {
+  const [explicit, viaClassroom] = await Promise.all([
+    listBoardMembers(db, boardId),
+    listClassroomMembersForBoard(db, boardId),
+  ]);
+
+  const roster = new Map<string, BoardRosterRow>();
+  for (const person of viaClassroom) {
+    roster.set(person.id, { ...person, isExplicitMember: false });
+  }
+  // Explicit wins the flag: it is the membership a teacher can remove here.
+  for (const person of explicit) {
+    roster.set(person.id, {
+      id: person.id,
+      email: person.email,
+      displayName: person.displayName,
+      role: person.role,
+      isExplicitMember: true,
+    });
+  }
+
+  return [...roster.values()].sort((a, b) =>
+    a.displayName.localeCompare(b.displayName),
+  );
+}
+
+/** The classroom roster of a board, empty when the board has no classroom. */
+async function listClassroomMembersForBoard(
+  db: Database,
+  boardId: string,
+): Promise<
+  { id: string; email: string; displayName: string; role: UserRole }[]
+> {
+  return db
+    .select({
+      id: users.id,
+      email: users.email,
+      displayName: users.displayName,
+      role: users.role,
+    })
+    .from(boards)
+    .innerJoin(
+      classroomMembers,
+      eq(classroomMembers.classroomId, boards.classroomId),
+    )
+    .innerJoin(users, eq(users.id, classroomMembers.userId))
+    .where(eq(boards.id, boardId))
+    .orderBy(users.displayName);
+}
+
 export interface BoardListRow extends Board {
   memberCount: number;
   ownerName: string;
+  classroomName: string | null;
 }
 
-/** Teacher panel listing: every board plus its member count. */
+/**
+ * "How many people can reach this board", the number a teacher actually wants:
+ * the classroom roster UNION the explicit members, deduplicated by the UNION
+ * itself. A student who is in the classroom AND listed explicitly is one
+ * person, not two. When `classroom_id` is null the second branch is empty and
+ * the count is the explicit membership, exactly as before classrooms existed.
+ */
+const boardReachCount = sql<number>`(
+  select count(*) from (
+    select ${boardMembers.userId} from ${boardMembers}
+      where ${boardMembers.boardId} = ${boards.id}
+    union
+    select ${classroomMembers.userId} from ${classroomMembers}
+      where ${classroomMembers.classroomId} = ${boards.classroomId}
+  ) as reach
+)`;
+
+/** Teacher panel listing: every board, its cohort and how many people reach it. */
 export async function listBoardsForTeacher(
   db: Database,
 ): Promise<BoardListRow[]> {
@@ -209,62 +328,119 @@ export async function listBoardsForTeacher(
       id: boards.id,
       title: boards.title,
       ownerId: boards.ownerId,
+      classroomId: boards.classroomId,
       status: boards.status,
       createdAt: boards.createdAt,
       updatedAt: boards.updatedAt,
       ownerName: users.displayName,
-      memberCount: count(boardMembers.userId),
+      classroomName: classrooms.name,
+      memberCount: boardReachCount,
     })
     .from(boards)
     .innerJoin(users, eq(boards.ownerId, users.id))
-    .leftJoin(boardMembers, eq(boardMembers.boardId, boards.id))
-    .groupBy(boards.id, users.displayName)
+    .leftJoin(classrooms, eq(classrooms.id, boards.classroomId))
     .orderBy(desc(boards.createdAt));
 
   return rows.map((row) => ({ ...row, memberCount: Number(row.memberCount) }));
 }
 
-/** "My boards": what this user may open. Teachers also see boards they own. */
+export interface UserBoardRow extends Board {
+  classroomName: string | null;
+}
+
+/**
+ * "My boards": what this user may open. Boards reached through the classroom,
+ * boards they were listed on explicitly, and — for a teacher — the boards they
+ * own. The three are a union, so a student in the classroom of a board they are
+ * also an explicit member of still sees it once (`selectDistinct`).
+ */
 export async function listBoardsForUser(
   db: Database,
   userId: string,
-): Promise<Board[]> {
+): Promise<UserBoardRow[]> {
   return db
     .selectDistinct({
       id: boards.id,
       title: boards.title,
       ownerId: boards.ownerId,
+      classroomId: boards.classroomId,
       status: boards.status,
       createdAt: boards.createdAt,
       updatedAt: boards.updatedAt,
+      classroomName: classrooms.name,
     })
     .from(boards)
-    .leftJoin(
-      boardMembers,
-      and(
-        eq(boardMembers.boardId, boards.id),
+    .leftJoin(boardMembers, boardMembershipJoin(userId))
+    .leftJoin(classroomMembers, classroomMembershipJoin(userId))
+    .leftJoin(classrooms, eq(classrooms.id, boards.classroomId))
+    .where(
+      or(
+        eq(boards.ownerId, userId),
         eq(boardMembers.userId, userId),
+        eq(classroomMembers.userId, userId),
       ),
     )
-    .where(or(eq(boards.ownerId, userId), eq(boardMembers.userId, userId)))
     .orderBy(desc(boards.updatedAt));
+}
+
+/** Every board assigned to a classroom, for the cohort's admin page. */
+export async function listBoardsInClassroom(
+  db: Database,
+  classroomId: string,
+): Promise<Board[]> {
+  return db
+    .select()
+    .from(boards)
+    .where(eq(boards.classroomId, classroomId))
+    .orderBy(desc(boards.updatedAt));
+}
+
+/**
+ * Assigns a board to a classroom, or clears the assignment with null. This is
+ * an ACCESS DECISION: it grants the whole cohort at once and revokes the
+ * previous one at once, because access is a join and never a copy.
+ */
+export async function setBoardClassroom(
+  db: Database,
+  boardId: string,
+  classroomId: string | null,
+): Promise<Board> {
+  const [updated] = await db
+    .update(boards)
+    .set({ classroomId, updatedAt: new Date() })
+    .where(eq(boards.id, boardId))
+    .returning();
+  if (!updated) {
+    throw new Error("The board does not exist.");
+  }
+  return updated;
 }
 
 export interface BoardAccess {
   board: Board;
+  /** An explicit `board_members` row: the additive exception. */
   isMember: boolean;
+  /** Reached through the board's classroom: the normal path. */
+  isClassroomMember: boolean;
   canView: boolean;
   canWrite: boolean;
   role: UserRole;
 }
 
 /**
- * AUTHORITATIVE ACCESS CHECK. One round trip: board row + membership + the
- * user's role straight from the database, then the pure rules in `authority.ts`.
+ * AUTHORITATIVE ACCESS CHECK. One round trip: board row + BOTH membership paths
+ * + the user's role straight from the database, then the pure rules in
+ * `authority.ts`.
  *
- * Phase B's websocket server must call this on every handshake (and after a
- * status change broadcast) instead of trusting anything the client says.
- * Returns null when the board does not exist.
+ * The classroom membership is resolved by a join on `boards.classroom_id`, not
+ * by a copy made when the board was assigned: adding a student to the classroom
+ * grants this board on the very next call, and removing them revokes it on the
+ * very next call. There is no cached verdict anywhere on this path.
+ *
+ * The websocket server calls this on every handshake AND on every update frame
+ * instead of trusting anything the client says. Returns null when the board
+ * does not exist — the caller must render the same answer for null and for
+ * `canView === false`, so membership cannot be probed from outside.
  */
 export async function getBoardAccess(
   db: Database,
@@ -276,16 +452,12 @@ export async function getBoardAccess(
       board: boards,
       role: users.role,
       memberUserId: boardMembers.userId,
+      classroomMemberUserId: classroomMembers.userId,
     })
     .from(boards)
     .innerJoin(users, eq(users.id, userId))
-    .leftJoin(
-      boardMembers,
-      and(
-        eq(boardMembers.boardId, boards.id),
-        eq(boardMembers.userId, userId),
-      ),
-    )
+    .leftJoin(boardMembers, boardMembershipJoin(userId))
+    .leftJoin(classroomMembers, classroomMembershipJoin(userId))
     .where(eq(boards.id, boardId))
     .limit(1);
 
@@ -295,11 +467,13 @@ export async function getBoardAccess(
     board: row.board,
     user: { id: userId, role: row.role },
     isMember: row.memberUserId !== null,
+    isClassroomMember: row.classroomMemberUserId !== null,
   };
 
   return {
     board: row.board,
     isMember: input.isMember,
+    isClassroomMember: input.isClassroomMember,
     canView: canViewBoard(input),
     canWrite: canWriteToBoard(input),
     role: row.role,

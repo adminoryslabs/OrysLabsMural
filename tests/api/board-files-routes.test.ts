@@ -10,7 +10,7 @@ import { getBoardFile } from "@/lib/boards/files";
 import { setBoardStatus } from "@/lib/boards/queries";
 import type { BoardStatus } from "@/lib/db/schema";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom, type Classroom } from "../setup/fixtures";
+import { seedBoardWithMember, type BoardFixture } from "../setup/fixtures";
 import {
   GIF_1x1,
   JPEG_1x1,
@@ -95,7 +95,7 @@ function download(
 }
 
 /** Uploads one known-good PNG as somebody allowed to, for the read tests. */
-async function seedFile(room: Classroom, fileId = "picture-one") {
+async function seedFile(room: BoardFixture, fileId = "picture-one") {
   const cookie = await cookieFor(room.teacher.id);
   const response = await upload(room.board.id, {
     cookie,
@@ -112,7 +112,7 @@ beforeEach(async () => {
 
 describe("POST /api/boards/:boardId/files — authentication", () => {
   it("refuses an upload with no cookie at all", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const response = await upload(room.board.id, {
       bytes: PNG_1x1,
       cookie: null,
@@ -122,7 +122,7 @@ describe("POST /api/boards/:boardId/files — authentication", () => {
   });
 
   it("refuses a forged session token", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const response = await upload(room.board.id, {
       cookie: `${SESSION_COOKIE_NAME}=${"f".repeat(43)}`,
       bytes: PNG_1x1,
@@ -131,7 +131,7 @@ describe("POST /api/boards/:boardId/files — authentication", () => {
   });
 
   it("refuses a cookie whose session has been invalidated", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     const { invalidateSession } = await import("@/lib/auth/session");
     await invalidateSession(testDb, cookie.split("=")[1]!);
@@ -141,7 +141,7 @@ describe("POST /api/boards/:boardId/files — authentication", () => {
   });
 
   it("stores nothing on a refused upload", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await upload(room.board.id, { cookie: null, bytes: PNG_1x1 });
     expect(await getBoardFile(testDb, room.board.id, "picture-one")).toBeNull();
   });
@@ -149,14 +149,14 @@ describe("POST /api/boards/:boardId/files — authentication", () => {
 
 describe("POST /api/boards/:boardId/files — a non-member is a missing board", () => {
   it("answers a non-member with 404, never 403", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.outsider.id);
     const response = await upload(room.board.id, { cookie, bytes: PNG_1x1 });
     expect(response.status).toBe(404);
   });
 
   it("answers identically for a board that does not exist", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.outsider.id);
 
     const nonMember = await upload(room.board.id, { cookie, bytes: PNG_1x1 });
@@ -170,7 +170,7 @@ describe("POST /api/boards/:boardId/files — a non-member is a missing board", 
   });
 
   it("does not leak through a malformed board id either", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.outsider.id);
     const response = await upload("not-a-uuid", { cookie, bytes: PNG_1x1 });
     expect(response.status).toBe(404);
@@ -186,7 +186,7 @@ describe("POST /api/boards/:boardId/files — uploading is writing", () => {
 
   for (const { status, who } of cases) {
     it(`refuses a ${who} on a ${status} board`, async () => {
-      const room = await seedClassroom(status);
+      const room = await seedBoardWithMember(status);
       const cookie = await cookieFor(room[who].id);
       const response = await upload(room.board.id, { cookie, bytes: PNG_1x1 });
 
@@ -202,7 +202,7 @@ describe("POST /api/boards/:boardId/files — uploading is writing", () => {
   }
 
   it("accepts a member on an active board", async () => {
-    const room = await seedClassroom("active");
+    const room = await seedBoardWithMember("active");
     const cookie = await cookieFor(room.student.id);
     const response = await upload(room.board.id, { cookie, bytes: PNG_1x1 });
 
@@ -215,14 +215,14 @@ describe("POST /api/boards/:boardId/files — uploading is writing", () => {
   });
 
   it("accepts a teacher on a read-only board — read only binds students", async () => {
-    const room = await seedClassroom("readonly");
+    const room = await seedBoardWithMember("readonly");
     const cookie = await cookieFor(room.teacher.id);
     const response = await upload(room.board.id, { cookie, bytes: PNG_1x1 });
     expect(response.status).toBe(201);
   });
 
   it("bites on the very next upload after a freeze, with no reconnect", async () => {
-    const room = await seedClassroom("active");
+    const room = await seedBoardWithMember("active");
     const cookie = await cookieFor(room.student.id);
 
     expect(
@@ -251,7 +251,7 @@ describe("POST /api/boards/:boardId/files — uploading is writing", () => {
 
 describe("POST /api/boards/:boardId/files — what may be stored", () => {
   it("accepts every format on the allowlist", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     const formats = [
       ["image/png", PNG_1x1],
@@ -272,7 +272,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("refuses an svg even when the client declares it honestly", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     const response = await upload(room.board.id, {
       cookie,
@@ -284,7 +284,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("refuses an svg dressed up as a png — the bytes decide, not the header", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     const response = await upload(room.board.id, {
       cookie,
@@ -297,7 +297,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("refuses a real png that lies about being a jpeg", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     const response = await upload(room.board.id, {
       cookie,
@@ -308,7 +308,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("refuses an empty body and a missing file part", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
 
     expect(
@@ -318,7 +318,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("refuses a missing or hostile file id", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
 
     expect(
@@ -337,7 +337,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("enforces the size limit", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     const previous = process.env.BOARD_FILE_MAX_BYTES;
     process.env.BOARD_FILE_MAX_BYTES = "2048";
@@ -369,7 +369,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("records who uploaded, on the HTTP path too", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     await upload(room.board.id, { cookie, bytes: PNG_1x1 });
 
@@ -378,7 +378,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
   });
 
   it("is idempotent over HTTP: the same file id twice both succeed", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
 
     const first = await upload(room.board.id, { cookie, bytes: PNG_1x1 });
@@ -393,7 +393,7 @@ describe("POST /api/boards/:boardId/files — what may be stored", () => {
 
 describe("GET /api/boards/:boardId/files/:fileId", () => {
   it("returns the exact bytes and mime type that were uploaded", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     const cookie = await cookieFor(room.student.id);
     await upload(room.board.id, {
       cookie,
@@ -411,7 +411,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("refuses without a cookie", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     expect((await download(room.board.id, "picture-one", null)).status).toBe(
       401,
@@ -419,7 +419,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("refuses a forged cookie", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     const response = await download(
       room.board.id,
@@ -430,7 +430,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("hides a file from somebody who is not on the board", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     const cookie = await cookieFor(room.outsider.id);
 
@@ -443,7 +443,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("answers a non-member exactly as it answers a missing board", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     const cookie = await cookieFor(room.outsider.id);
 
@@ -455,7 +455,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("answers a missing file the same way, so ids cannot be enumerated", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     const memberCookie = await cookieFor(room.student.id);
     const outsiderCookie = await cookieFor(room.outsider.id);
@@ -476,7 +476,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("still serves images on a frozen board — freezing stops writes, not eyes", async () => {
-    const room = await seedClassroom("active");
+    const room = await seedBoardWithMember("active");
     await seedFile(room);
     await setBoardStatus(testDb, room.board.id, "frozen");
 
@@ -487,7 +487,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("still serves images on a read-only board", async () => {
-    const room = await seedClassroom("active");
+    const room = await seedBoardWithMember("active");
     await seedFile(room);
     await setBoardStatus(testDb, room.board.id, "readonly");
 
@@ -498,7 +498,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("lets a supervising teacher read a board's images", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     const cookie = await cookieFor(room.teacher.id);
     expect((await download(room.board.id, "picture-one", cookie)).status).toBe(
@@ -507,7 +507,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("caches immutably, privately, and per cookie", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     const cookie = await cookieFor(room.student.id);
     const response = await download(room.board.id, "picture-one", cookie);
@@ -521,7 +521,7 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("answers 304 to a matching ETag", async () => {
-    const room = await seedClassroom();
+    const room = await seedBoardWithMember();
     await seedFile(room);
     const cookie = await cookieFor(room.student.id);
 
@@ -541,8 +541,8 @@ describe("GET /api/boards/:boardId/files/:fileId", () => {
   });
 
   it("does not serve one board's file to another board", async () => {
-    const first = await seedClassroom();
-    const second = await seedClassroom();
+    const first = await seedBoardWithMember();
+    const second = await seedBoardWithMember();
     await seedFile(first, "only-on-the-first");
 
     // The teacher may view both boards, so this isolates the board scoping of

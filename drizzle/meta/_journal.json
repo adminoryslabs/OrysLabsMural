@@ -15,6 +15,13 @@
       "when": 1786913616374,
       "tag": "0001_skinny_warpath",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786923265723,
+      "tag": "0002_white_banshee",
+      "breakpoints": true
     }
   ]
 }

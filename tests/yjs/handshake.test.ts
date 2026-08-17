@@ -9,7 +9,7 @@ import {
 } from "@/yjs-server/close-codes";
 import type { YjsServer } from "@/yjs-server/server";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 import { cookieFor, rawConnect, startTestServer, waitUntil } from "../setup/yjs";
 
 let server: YjsServer;
@@ -25,7 +25,7 @@ afterEach(async () => {
 
 describe("websocket handshake authentication", () => {
   it("rejects a connection that sends no cookie at all", async () => {
-    const { board } = await seedClassroom();
+    const { board } = await seedBoardWithMember();
 
     const { closed } = rawConnect(server, `/${board.id}`, null);
 
@@ -33,7 +33,7 @@ describe("websocket handshake authentication", () => {
   });
 
   it("rejects a forged session token", async () => {
-    const { board } = await seedClassroom();
+    const { board } = await seedBoardWithMember();
     const forged = `${SESSION_COOKIE_NAME}=${generateSessionToken()}`;
 
     const { closed } = rawConnect(server, `/${board.id}`, forged);
@@ -42,7 +42,7 @@ describe("websocket handshake authentication", () => {
   });
 
   it("rejects a cookie header that carries other cookies but no session", async () => {
-    const { board } = await seedClassroom();
+    const { board } = await seedBoardWithMember();
 
     const { closed } = rawConnect(server, `/${board.id}`, "theme=dark; lang=es");
 
@@ -50,7 +50,7 @@ describe("websocket handshake authentication", () => {
   });
 
   it("accepts a member with a valid session and starts syncing", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
 
     const { socket, firstMessage } = rawConnect(
       server,
@@ -67,7 +67,7 @@ describe("websocket handshake authentication", () => {
   });
 
   it("accepts the teacher on a board they own", async () => {
-    const { teacher, board } = await seedClassroom();
+    const { teacher, board } = await seedBoardWithMember();
 
     const { socket, firstMessage } = rawConnect(
       server,
@@ -80,7 +80,7 @@ describe("websocket handshake authentication", () => {
   });
 
   it("opens exactly one board_session row per accepted connection", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const cookie = await cookieFor(student.id);
 
     const first = rawConnect(server, `/${board.id}`, cookie);
@@ -111,7 +111,7 @@ describe("websocket handshake authentication", () => {
 
 describe("board existence is not probeable", () => {
   it("closes a non-member with the same code as a board that does not exist", async () => {
-    const { outsider, board } = await seedClassroom();
+    const { outsider, board } = await seedBoardWithMember();
     const cookie = await cookieFor(outsider.id);
     const missingBoardId = "00000000-0000-4000-8000-000000000000";
 
@@ -129,7 +129,7 @@ describe("board existence is not probeable", () => {
   });
 
   it("rejects a malformed board id the same way", async () => {
-    const { student } = await seedClassroom();
+    const { student } = await seedBoardWithMember();
 
     const { closed } = rawConnect(
       server,
@@ -141,7 +141,7 @@ describe("board existence is not probeable", () => {
   });
 
   it("rejects a connection with no board id in the path", async () => {
-    const { student } = await seedClassroom();
+    const { student } = await seedBoardWithMember();
 
     const { closed } = rawConnect(server, "/", await cookieFor(student.id));
 
@@ -149,7 +149,7 @@ describe("board existence is not probeable", () => {
   });
 
   it("never opens a participation row for a rejected connection", async () => {
-    const { outsider, board } = await seedClassroom();
+    const { outsider, board } = await seedBoardWithMember();
 
     const { closed } = rawConnect(
       server,
@@ -165,7 +165,7 @@ describe("board existence is not probeable", () => {
 
 describe("path shapes", () => {
   it("accepts the /yjs prefix that Caddy proxies in production", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
 
     const { socket, firstMessage } = rawConnect(
       server,

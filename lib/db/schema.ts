@@ -58,6 +58,62 @@ export const users = pgTable(
   ],
 );
 
+/**
+ * A cohort: the "salón" a course is taught to.
+ *
+ * A classroom is the SINGLE SOURCE OF TRUTH for who reaches its boards. Adding
+ * a student to a classroom grants every board of that classroom at once, and
+ * removing them revokes every one of them at once, because the grant is a join
+ * at read time and never a copy. Nothing here is ever snapshotted into
+ * `board_members`: a snapshot drifts the moment the roster changes.
+ */
+export const classrooms = pgTable(
+  "classrooms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      // Same reasoning as `boards.owner_id`: deleting a teacher must not
+      // silently take a cohort with it.
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Two classrooms with the same name are indistinguishable in the picker a
+    // teacher uses to assign a board, and picking the wrong one is an access
+    // decision. Names are stored trimmed by the application layer.
+    uniqueIndex("classrooms_name_unique").on(table.name),
+    index("classrooms_owner_idx").on(table.ownerId),
+  ],
+);
+
+export const classroomMembers = pgTable(
+  "classroom_members",
+  {
+    classroomId: uuid("classroom_id")
+      .notNull()
+      .references(() => classrooms.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.classroomId, table.userId] }),
+    // Drives "which classrooms is this user in", i.e. the derived board access
+    // read by `getBoardAccess` on every single write frame.
+    index("classroom_members_user_idx").on(table.userId),
+  ],
+);
+
 export const boards = pgTable(
   "boards",
   {
@@ -68,6 +124,18 @@ export const boards = pgTable(
       // Deleting a teacher must not silently orphan or destroy class material,
       // so the delete is restricted; boards must be reassigned or removed first.
       .references(() => users.id, { onDelete: "restrict" }),
+    /**
+     * The cohort this board belongs to, or null for a board that is not taught
+     * to a classroom. Null behaves exactly as the schema did before classrooms
+     * existed: only `board_members` grants access.
+     *
+     * `on delete set null`: deleting a classroom must never destroy class
+     * material, and must never widen access either. The boards survive as
+     * unassigned boards, falling back to their explicit members.
+     */
+    classroomId: uuid("classroom_id").references(() => classrooms.id, {
+      onDelete: "set null",
+    }),
     status: boardStatus("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -79,6 +147,7 @@ export const boards = pgTable(
   (table) => [
     index("boards_owner_idx").on(table.ownerId),
     index("boards_status_idx").on(table.status),
+    index("boards_classroom_idx").on(table.classroomId),
   ],
 );
 
@@ -255,6 +324,9 @@ export type NewUser = typeof users.$inferInsert;
 export type Board = typeof boards.$inferSelect;
 export type NewBoard = typeof boards.$inferInsert;
 export type BoardMember = typeof boardMembers.$inferSelect;
+export type Classroom = typeof classrooms.$inferSelect;
+export type NewClassroom = typeof classrooms.$inferInsert;
+export type ClassroomMember = typeof classroomMembers.$inferSelect;
 export type BoardSession = typeof boardSessions.$inferSelect;
 export type BoardSnapshot = typeof boardSnapshots.$inferSelect;
 export type BoardFile = typeof boardFiles.$inferSelect;

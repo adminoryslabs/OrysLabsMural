@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { YjsServer } from "@/yjs-server/server";
 import { resetDatabase } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 import {
   cookieFor,
   createClient,
@@ -31,7 +31,7 @@ afterEach(async () => {
 
 describe("presence", () => {
   it("shows the display name of everyone else on the board", async () => {
-    const { teacher, student, board } = await seedClassroom();
+    const { teacher, student, board } = await seedBoardWithMember();
     const a = track(
       createClient(server, board.id, await cookieFor(student.id), {
         id: student.id,
@@ -60,7 +60,7 @@ describe("presence", () => {
   });
 
   it("relays cursors, including for a client that may not write", async () => {
-    const { teacher, student, board } = await seedClassroom("readonly");
+    const { teacher, student, board } = await seedBoardWithMember("readonly");
     const observer = track(
       createClient(server, board.id, await cookieFor(student.id), {
         id: student.id,
@@ -86,7 +86,7 @@ describe("presence", () => {
   });
 
   it("drops a peer from the list when it disconnects", async () => {
-    const { teacher, student, board } = await seedClassroom();
+    const { teacher, student, board } = await seedBoardWithMember();
     const leaving = track(
       createClient(server, board.id, await cookieFor(student.id), {
         id: student.id,
