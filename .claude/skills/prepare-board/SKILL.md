@@ -24,6 +24,10 @@ break a board request into individual shapes; that judgment belongs to you.
    is a standing credential, shared the same way any other project access is,
    and good for as long as it keeps getting used (see "Why a session token"
    below).
+3. If a scene places any `image` shape (see the icon bank below), also set
+   `MURAL_AGENT_APP_URL` — the app's plain HTTP origin (e.g.
+   `http://localhost:3000` locally), distinct from `MURAL_AGENT_YJS_URL`. Not
+   needed for scenes with no icons.
 
 If either variable is missing, `read-board.ts`/`write-board.ts` fail with a
 clear message pointing back here — that is the signal setup did not happen.
@@ -94,11 +98,34 @@ auto-layout: you decide positions. A reasonable working canvas is roughly
 - Pick 3-5 stroke colors max per board and reuse them for related groups
   (e.g. all "risk" boxes in red, all "flow" boxes in purple) — a reference
   infographic's color-coding is usually meaningful, keep it.
-- Icons: unicode/emoji glyphs (⚠ ✓ ☆ ⚖ ①-⑩ etc.) are the only supported icon
-  today, inline in a `text` or as the first character of a `box` title. There
-  is no vector icon library wired up yet — do not invent an `image` fileId
-  that was never uploaded, it will fail. A reusable SVG icon bank is a known
-  gap, not a hidden capability; tell the user if a request needs one.
+- Icons: unicode/emoji glyphs (⚠ ✓ ☆ ⚖ ①-⑩ etc.) still work fine inline in a
+  `text` or as the first character of a `box` title, for anything not covered
+  below.
+- **The doodle icon bank.** A fixed set of hand-drawn PNGs, matching the
+  sketchy `roughness: 1` look of the shapes around them (a clean vector icon
+  would look pasted-on next to them). Place one with an `image` shape using
+  the `fileId` from this table — `write-board.ts` uploads the bytes
+  automatically the first time a board uses one, from `public/icons/`, using
+  `MURAL_AGENT_APP_URL` (see Setup above):
+
+  | name        | fileId          | depicts                          |
+  | ----------- | --------------- | --------------------------------- |
+  | `bulb`      | `icon-bulb`      | idea / insight                    |
+  | `calendar`  | `icon-calendar`  | date / schedule                   |
+  | `checklist` | `icon-checklist` | tasks / requirements               |
+  | `file`      | `icon-file`      | document / artifact                |
+  | `gear`      | `icon-gear`      | configuration / mechanism           |
+  | `lab`       | `icon-lab`       | experiment / testing                |
+  | `laptop`    | `icon-laptop`    | code / development                  |
+  | `padlock`   | `icon-padlock`   | security / access control           |
+  | `shield`    | `icon-shield`    | protection / defense                |
+  | `user`      | `icon-user`      | person / actor                      |
+
+  Do not invent a `fileId` outside this table — it was never uploaded and the
+  element will render as a broken picture frame for the whole class. This
+  bank grows over time; if a request needs a glyph this table does not have,
+  tell the user rather than approximating with an emoji shape and calling it
+  the same thing.
 
 ## Why a session token, not a login step
 
@@ -116,8 +143,10 @@ it and mint a fresh one.
 
 - No board creation, membership, freeze/unfreeze, or deletion — those are
   teacher actions in the app itself, on purpose. This skill only draws.
-- No image upload. Placing an `image` shape requires the `fileId` to already
-  exist as a `board_files` row; nothing here uploads bytes.
+- No arbitrary image upload. `write-board.ts` uploads bytes only for the
+  catalog icons listed above (sourced from `public/icons/`); an `image` shape
+  with any other `fileId` still requires that file to already exist as a
+  `board_files` row.
 - Authority is never bypassed. A frozen board rejects this exactly like it
   rejects a student — the websocket server re-checks `getBoardAccess` on every
   write, unconditionally.
