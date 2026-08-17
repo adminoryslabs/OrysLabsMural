@@ -18,6 +18,7 @@ import "dotenv/config";
 import { WebSocket } from "ws";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session-cookie";
 import { BoardSession } from "@/lib/collab/board-session";
+import { assertWellFormed } from "./elements";
 import { expandScene, type Shape } from "./skeleton";
 
 const ELEMENTS_KEY = "elements";
@@ -52,6 +53,13 @@ async function main(): Promise<void> {
 
   const shapes: Shape[] = JSON.parse(readFileSync(file, "utf8"));
   const scene = expandScene(shapes);
+
+  // Fail before ever opening a socket: a malformed element must never reach
+  // the board, because it renders fine here (it's just JSON) and only crashes
+  // Excalidraw's own reconciliation later, in someone's browser.
+  for (const el of scene) {
+    assertWellFormed(el as unknown as Record<string, unknown>);
+  }
 
   const CookieWebSocket = class extends WebSocket {
     constructor(address: string, protocols?: string | string[]) {

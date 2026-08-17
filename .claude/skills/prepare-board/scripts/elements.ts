@@ -18,6 +18,7 @@ import type {
   ExcalidrawImageElement,
   ExcalidrawRectangleElement,
   ExcalidrawTextElement,
+  FileId,
 } from "@excalidraw/excalidraw/element/types";
 
 function randInt(): number {
@@ -87,7 +88,7 @@ export function rectangle(
     roundness: { type: 3 },
     groupIds: extra.groupIds ?? [],
     boundElements: extra.boundElements ?? null,
-  } as ExcalidrawRectangleElement;
+  };
 }
 
 export interface TextOptions {
@@ -131,9 +132,11 @@ export function text(opts: TextOptions): ExcalidrawTextElement {
     verticalAlign: opts.verticalAlign ?? "top",
     containerId: opts.containerId ?? null,
     autoResize: true,
-    lineHeight: 1.25,
+    // Branded number type with no runtime meaning — the value is unitless
+    // line height, Excalidraw just wants the nominal type to line up.
+    lineHeight: 1.25 as ExcalidrawTextElement["lineHeight"],
     groupIds: opts.groupIds ?? [],
-  } as ExcalidrawTextElement;
+  };
 }
 
 /**
@@ -247,7 +250,7 @@ export function arrow(
     startArrowhead: null,
     endArrowhead: "arrow",
     elbowed: false,
-  } as ExcalidrawArrowElement;
+  };
 }
 
 /**
@@ -274,10 +277,61 @@ export function image(
     strokeStyle: "solid",
     roughness: 0,
     roundness: null,
-    fileId,
+    // Branded string type with no runtime meaning — see the lineHeight note.
+    fileId: fileId as FileId,
     scale: [1, 1],
     status: "saved",
     crop: null,
     groupIds: [],
-  } as ExcalidrawImageElement;
+  };
+}
+
+/**
+ * The base fields Excalidraw's own code reads unconditionally (e.g.
+ * `element.groupIds.length` during reconciliation) — a build-time check
+ * (`tsc`, now that `.claude/**\/*.ts` is in tsconfig's `include`) already
+ * catches a builder that omits one of these, but this is the runtime backstop
+ * for anything that reaches `write-board.ts` without going through a builder
+ * above — a hand-edited scene file, for instance.
+ */
+const REQUIRED_BASE_KEYS = [
+  "id",
+  "x",
+  "y",
+  "strokeColor",
+  "backgroundColor",
+  "fillStyle",
+  "strokeWidth",
+  "strokeStyle",
+  "roundness",
+  "roughness",
+  "opacity",
+  "width",
+  "height",
+  "angle",
+  "seed",
+  "version",
+  "versionNonce",
+  "index",
+  "isDeleted",
+  "groupIds",
+  "frameId",
+  "boundElements",
+  "updated",
+  "link",
+  "locked",
+] as const;
+
+export function assertWellFormed(el: Record<string, unknown>): void {
+  for (const key of REQUIRED_BASE_KEYS) {
+    if (!(key in el)) {
+      throw new Error(`Element "${el.id}" (${el.type}) is missing required field "${key}".`);
+    }
+  }
+  if (!Array.isArray(el.groupIds)) {
+    throw new Error(`Element "${el.id}" (${el.type}) has a non-array groupIds.`);
+  }
+  if (el.boundElements !== null && !Array.isArray(el.boundElements)) {
+    throw new Error(`Element "${el.id}" (${el.type}) has a boundElements that is neither null nor an array.`);
+  }
 }
