@@ -60,6 +60,14 @@ round-trips and rehydration after a restart, presence, the whole
 `board_sessions` lifecycle, and the live status push — a freeze and a later
 unfreeze both reaching a client that never reloads.
 
+`tests/classrooms/` is the access model: a cohort student reaching every board
+of their classroom, a guest reaching one board through `board_members` while not
+being in the cohort at all, adding and removing granting and revoking every
+board at once, `frozen` and `readonly` beating both paths, teachers unaffected,
+and an unassigned board behaving exactly as it did before. It runs against the
+real database, because a rule that is right about inputs the query never
+produces protects nobody.
+
 `tests/api/` drives the image routes with real `Request` objects, real
 multipart bodies and real session cookies. The route files under `app/api/` are
 three-line adapters over the handlers those tests call, so the authorisation
@@ -103,23 +111,50 @@ docker compose -f docker-compose.prod.yml run --rm \
 
 ## Domain model
 
-| Table             | Purpose                                                     |
-| ----------------- | ----------------------------------------------------------- |
-| `users`           | Accounts. Role is `teacher` or `student`. No public signup.  |
-| `boards`          | A whiteboard. `status` is the server-side write authority.   |
-| `board_members`   | Who is assigned to a board (composite PK).                   |
-| `board_sessions`  | Participation log: one row per websocket connection.         |
-| `board_snapshots` | Yjs document state (`bytea`), append-only.                   |
-| `board_files`     | Bytes of images pasted onto a board. Keyed by (board, file). |
-| `sessions`        | Auth sessions. The stored id is a SHA-256 of the cookie token.|
+| Table               | Purpose                                                     |
+| ------------------- | ----------------------------------------------------------- |
+| `users`             | Accounts. Role is `teacher` or `student`. No public signup.  |
+| `classrooms`        | A cohort. Its roster is what opens the boards assigned to it.|
+| `classroom_members` | Who is in a cohort (composite PK).                           |
+| `boards`            | A whiteboard. `status` is the server-side write authority. `classroom_id` is nullable. |
+| `board_members`     | The additive per-board exception (composite PK).             |
+| `board_sessions`    | Participation log: one row per websocket connection.       |
+| `board_snapshots`   | Yjs document state (`bytea`), append-only.                 |
+| `board_files`       | Bytes of images pasted onto a board. Keyed by (board, file).|
+| `sessions`          | Auth sessions. The stored id is a SHA-256 of the cookie token.|
+
+### Who can open a board
+
+A user reaches a board if they are a **teacher**, **or** they belong to the
+board's **classroom**, **or** they are listed in **`board_members`**.
+
+The classroom is the source of truth. Putting a student in a classroom grants
+every board of that classroom on the next request, and taking them out revokes
+every one of them on the next request, because the grant is a join at read time
+and never a copy. Copying a roster into `board_members` when a board is assigned
+would be a snapshot, and a snapshot drifts the moment the class changes.
+
+`board_members` is the escape hatch, and it is **additive**: a teaching
+assistant, or a guest sitting in on one exercise. It only ever adds — removing
+somebody from it never takes away what their classroom gives them. A board with
+`classroom_id = null` has no cohort and behaves exactly as boards did before
+classrooms existed.
+
+Deleting a classroom does **not** delete its boards. `boards.classroom_id` is
+`on delete set null`, so they survive as unassigned boards holding only their
+explicit members: no class material is destroyed, and no access is widened.
 
 ### Board status is the authority
 
-| Status     | Teachers   | Members    | Everyone else |
-| ---------- | ---------- | ---------- | ------------- |
-| `active`   | read/write | read/write | no access     |
-| `readonly` | read/write | read only  | no access     |
-| `frozen`   | read only  | read only  | no access     |
+| Status     | Teachers   | Anyone who reaches it | Everyone else |
+| ---------- | ---------- | --------------------- | ------------- |
+| `active`   | read/write | read/write            | no access     |
+| `readonly` | read/write | read only             | no access     |
+| `frozen`   | read only  | read only             | no access     |
+
+Status outranks **both** membership paths. The `frozen` and `readonly` checks
+run first and unconditionally, so belonging to the cohort buys exactly as much
+on a frozen board as an explicit row does: nothing.
 
 `frozen` deliberately outranks ownership: freezing stops the class dead,
 including the teacher. The rules live in `lib/boards/authority.ts` as pure
@@ -132,22 +167,30 @@ not permission.
 
 ### Assigning a class
 
+Students go into a **classroom** (`/teacher/classrooms`), and boards are
+assigned to that classroom from each board's own page. That is the whole normal
+workflow: there is nothing to copy into the boards afterwards, and no per-board
+roster to keep in sync.
+
 Membership is edited in batches, because a dropdown per student is unusable in
 front of a class: tick as many people as you like, and/or paste the roster
 (newlines, commas and semicolons all work). Adding and removing behave the same
-way.
+way, and classrooms and boards use the same component and the same helpers, so
+the two screens cannot drift into behaving differently.
 
 A batch never fails as a whole. Every input is classified and reported back —
 added, already a member, unknown address — so one typo costs one student, not
-the class. The rules live in `lib/boards/membership.ts`; the insert is a single
-`on conflict do nothing … returning`, so "who was already a member" is answered
-by Postgres rather than by a read-then-write two teachers could interleave.
+the class. The shared rules live in `lib/members/batch.ts`, wrapped by
+`lib/classrooms/membership.ts` and `lib/boards/membership.ts`; the insert is a
+single `on conflict do nothing … returning`, so "who was already a member" is
+answered by Postgres rather than by a read-then-write two teachers could
+interleave.
 
 Authorisation is not the form's business: the server action re-authenticates
-with `requireTeacher()`, and the batch functions then load the board and the
-actor's role from the database and run `canAdministerBoard` again for
-themselves. Selections that are not even shaped like a uuid are dropped before
-they reach SQL.
+with `requireTeacher()`, and the batch functions then load the board (or the
+classroom) and the actor's role from the database and run `canAdministerBoard` /
+`canAdministerClassroom` again for themselves. Selections that are not even
+shaped like a uuid are dropped before they reach SQL.
 
 ### Attribution
 
@@ -182,6 +225,8 @@ app/                 Routes. (app)/ is the authenticated shell, api/ the JSON+by
 components/          Shared UI, including the Excalidraw canvas.
 lib/auth/            Passwords, sessions, cookies, guards.
 lib/boards/          Board authority rules, queries, Yjs snapshots.
+lib/classrooms/      Cohorts: authority rules, queries, batch membership.
+lib/members/         Batch membership machinery shared by both of the above.
 lib/collab/          The browser side of the collaboration link.
 lib/participation/   The participation/attribution log.
 lib/db/              Drizzle schema and client.
