@@ -94,6 +94,16 @@ describe("snapshot persistence", () => {
     await waitUntil(() => server.roomCount() === 0, {
       label: "the room to be released",
     });
+
+    // Wait for the snapshot itself, not for the room count. Releasing the room
+    // and finishing the write are two different moments: the count can reach
+    // zero while the insert is still in flight. Asserting straight after the
+    // count passed locally and failed on CI, where the database is slower —
+    // the test was watching a proxy for the condition instead of the condition.
+    await waitUntil(
+      async () => (await getLatestBoardSnapshot(testDb, board.id)) !== null,
+      { label: "the flushed snapshot" },
+    );
     const snapshot = await getLatestBoardSnapshot(testDb, board.id);
     expect(snapshot).not.toBeNull();
   });
