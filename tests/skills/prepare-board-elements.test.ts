@@ -7,7 +7,7 @@ import {
   image,
   rectangle,
   text,
-} from "../../.claude/skills/prepare-board/scripts/elements";
+} from "@/lib/collab/elements";
 import { expandScene, type Shape } from "../../.claude/skills/prepare-board/scripts/skeleton";
 
 /**
