@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createUser } from "@/lib/auth/users";
 import {
   addBoardMember,
@@ -23,12 +24,22 @@ export interface BoardFixture {
   board: Board;
 }
 
-let counter = 0;
+/**
+ * Unique across processes, not just within one.
+ *
+ * A module-level counter is per worker, and vitest runs test files in parallel
+ * workers that all share one database — so two workers minted the same
+ * `teacher1@example.com` and the same `Cohort 1` and collided on the unique
+ * indexes. It surfaced far from the cause: a room's snapshot flush swallows its
+ * error, so the failure read as "the snapshot never arrived".
+ */
+function uniqueSuffix(): string {
+  return randomUUID().slice(0, 8);
+}
 
 async function makeUser(role: UserRole, displayName: string) {
-  counter += 1;
   return createUser(testDb, {
-    email: `${role}${counter}@example.com`,
+    email: `${role}-${uniqueSuffix()}@example.com`,
     password: "s3cret-password",
     displayName,
     role,
@@ -87,9 +98,10 @@ export async function seedCohort(
   const guest = await makeUser("student", "Alan Turing");
   const outsider = await makeUser("student", "Grace Hopper");
 
-  counter += 1;
   const classroom = await createClassroom(testDb, {
-    name: `Cohort ${counter}`,
+    // Classroom names carry a unique index, so this must not repeat across
+    // parallel workers either.
+    name: `Cohort ${uniqueSuffix()}`,
     ownerId: teacher.id,
   });
   await addClassroomMembers(testDb, classroom.id, [cohortStudent.id]);
