@@ -195,6 +195,14 @@ describe("board session lifecycle", () => {
 
 describe("stale session reaper", () => {
   it("closes sessions whose heartbeat went silent", async () => {
+    // A live heartbeat (the default 50ms test interval) unconditionally sets
+    // lastSeenAt to the real "now" — see recordBoardActivity. Racing that
+    // against the backdate below is what made this test flaky in CI only: a
+    // busier runner gives one more heartbeat tick time to land between the
+    // UPDATE and closeStaleBoardSessions, undoing the simulated silence.
+    await server.close();
+    server = await startTestServer({ heartbeatIntervalMs: 100_000 });
+
     const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
