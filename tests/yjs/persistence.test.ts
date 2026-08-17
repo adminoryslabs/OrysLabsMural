@@ -5,7 +5,7 @@ import { getLatestBoardSnapshot } from "@/lib/boards/snapshots";
 import { boardSnapshots } from "@/lib/db/schema";
 import type { YjsServer } from "@/yjs-server/server";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 import {
   cookieFor,
   createClient,
@@ -39,7 +39,7 @@ afterEach(async () => {
 
 describe("snapshot persistence", () => {
   it("persists the document after the debounce window", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -54,7 +54,7 @@ describe("snapshot persistence", () => {
   });
 
   it("rehydrates a fresh server from the stored snapshot", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const cookie = await cookieFor(student.id);
 
     const first = track(createClient(server, board.id, cookie));
@@ -82,7 +82,7 @@ describe("snapshot persistence", () => {
   });
 
   it("flushes the document when the last client leaves", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const cookie = await cookieFor(student.id);
 
     const client = track(createClient(server, board.id, cookie));
@@ -99,7 +99,7 @@ describe("snapshot persistence", () => {
   });
 
   it("never persists a rejected update", async () => {
-    const { student, board } = await seedClassroom("frozen");
+    const { student, board } = await seedBoardWithMember("frozen");
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -119,7 +119,7 @@ describe("snapshot persistence", () => {
   });
 
   it("touches boards.updated_at when it persists", async () => {
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const before = board.updatedAt.getTime();
 
     const client = track(
@@ -141,7 +141,7 @@ describe("snapshot persistence", () => {
     await shutdown();
     server = await startTestServer({ snapshotHistoryLimit: 3 });
 
-    const { student, board } = await seedClassroom();
+    const { student, board } = await seedBoardWithMember();
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );

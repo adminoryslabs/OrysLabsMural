@@ -10,7 +10,7 @@ import {
   sniffImageMimeType,
 } from "@/lib/boards/files";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 import { GIF_1x1, JPEG_1x1, PNG_1x1, WEBP_1x1 } from "../setup/images";
 
 beforeEach(async () => {
@@ -106,7 +106,7 @@ describe("the upload limit", () => {
 
 describe("storing bytes", () => {
   it("round-trips them byte for byte", async () => {
-    const { board, student } = await seedClassroom();
+    const { board, student } = await seedBoardWithMember();
     await saveBoardFile(testDb, {
       boardId: board.id,
       fileId: "picture-one",
@@ -123,7 +123,7 @@ describe("storing bytes", () => {
   });
 
   it("records who uploaded it", async () => {
-    const { board, student } = await seedClassroom();
+    const { board, student } = await seedBoardWithMember();
     await saveBoardFile(testDb, {
       boardId: board.id,
       fileId: "attributed",
@@ -137,7 +137,7 @@ describe("storing bytes", () => {
   });
 
   it("is idempotent: the same file id twice does not fail", async () => {
-    const { board, student, teacher } = await seedClassroom();
+    const { board, student, teacher } = await seedBoardWithMember();
     const input = {
       boardId: board.id,
       fileId: "same-picture",
@@ -160,8 +160,8 @@ describe("storing bytes", () => {
   });
 
   it("keeps the same file id on two boards independent", async () => {
-    const first = await seedClassroom();
-    const second = await seedClassroom();
+    const first = await seedBoardWithMember();
+    const second = await seedBoardWithMember();
 
     await saveBoardFile(testDb, {
       boardId: first.board.id,
@@ -186,7 +186,7 @@ describe("storing bytes", () => {
   });
 
   it("goes away with the board it belongs to", async () => {
-    const { board, student } = await seedClassroom();
+    const { board, student } = await seedBoardWithMember();
     await saveBoardFile(testDb, {
       boardId: board.id,
       fileId: "doomed",

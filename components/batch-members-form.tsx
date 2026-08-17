@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState, useMemo, useRef, useState } from "react";
-import type { ActionState } from "../../actions";
 
 export interface PickableUser {
   id: string;
@@ -10,13 +9,26 @@ export interface PickableUser {
   role: string;
 }
 
+/**
+ * What a batch membership action gives back. Declared structurally rather than
+ * imported from the server actions module, so this component stays usable by
+ * any of them (boards, classrooms) without depending on one of them.
+ */
+export interface BatchFormState {
+  error?: string;
+  message?: string;
+}
+
 export interface BatchMembersFormProps {
-  boardId: string;
+  /** The board or classroom being edited. */
+  scopeId: string;
+  /** The form field the action reads it from: "boardId" or "classroomId". */
+  scopeField: string;
   people: PickableUser[];
   action: (
-    previous: ActionState,
+    previous: BatchFormState,
     formData: FormData,
-  ) => Promise<ActionState>;
+  ) => Promise<BatchFormState>;
   submitLabel: string;
   emptyLabel: string;
   pasteHint: string;
@@ -29,16 +41,21 @@ export interface BatchMembersFormProps {
  * class a teacher wants to paste the roster and tick the two people who joined
  * late, and hit the button once. Everything the form sends is re-checked and
  * re-authorised on the server; this component only decides what is convenient.
+ *
+ * It is deliberately ignorant of WHAT it is assigning people to. A board and a
+ * classroom are the same interaction, so they are the same component — only the
+ * hidden field's name and the server action differ.
  */
 export function BatchMembersForm({
-  boardId,
+  scopeId,
+  scopeField,
   people,
   action,
   submitLabel,
   emptyLabel,
   pasteHint,
 }: BatchMembersFormProps) {
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(
+  const [state, formAction, pending] = useActionState<BatchFormState, FormData>(
     action,
     {},
   );
@@ -78,7 +95,7 @@ export function BatchMembersForm({
 
   return (
     <form action={formAction} ref={formRef}>
-      <input type="hidden" name="boardId" value={boardId} />
+      <input type="hidden" name={scopeField} value={scopeId} />
 
       {state.error ? <p className="error">{state.error}</p> : null}
       {state.message ? (

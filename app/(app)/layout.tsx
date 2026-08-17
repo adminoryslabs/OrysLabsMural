@@ -14,6 +14,11 @@ function navigationFor(role: "teacher" | "student"): NavLink[] {
   if (role === "teacher") {
     return [
       { href: "/teacher", label: "Boards", match: "/teacher" },
+      {
+        href: "/teacher/classrooms",
+        label: "Classrooms",
+        match: "/teacher/classrooms",
+      },
       { href: "/teacher/users", label: "Students", match: "/teacher/users" },
       { href: "/participation", label: "Participation", match: "/participation" },
     ];
@@ -34,7 +39,7 @@ export default async function AuthenticatedLayout({
       <header className="app-nav">
         <Link className="app-nav-brand" href="/">
           <span className="brand-mark" aria-hidden="true" />
-          <span className="wordmark">OrysLabs Mural</span>
+          <span className="wordmark">OrysLabs Collab</span>
         </Link>
 
         <NavLinks links={navigationFor(user.role)} />

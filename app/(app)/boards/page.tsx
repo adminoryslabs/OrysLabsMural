@@ -24,6 +24,7 @@ export default async function MyBoardsPage() {
     id: board.id,
     title: board.title,
     href: `/boards/${board.id}`,
+    classroom: board.classroomName,
     updated: formatUpdated(board.updatedAt, now),
     status: board.status,
     online: presence.get(board.id) ?? [],

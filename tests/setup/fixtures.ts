@@ -4,10 +4,19 @@ import {
   createBoard,
   setBoardStatus,
 } from "@/lib/boards/queries";
-import type { Board, BoardStatus, UserRole } from "@/lib/db/schema";
+import {
+  addClassroomMembers,
+  createClassroom,
+} from "@/lib/classrooms/queries";
+import type {
+  Board,
+  BoardStatus,
+  Classroom,
+  UserRole,
+} from "@/lib/db/schema";
 import { testDb } from "./db";
 
-export interface Classroom {
+export interface BoardFixture {
   teacher: { id: string; email: string; displayName: string };
   student: { id: string; email: string; displayName: string };
   outsider: { id: string; email: string; displayName: string };
@@ -27,12 +36,14 @@ async function makeUser(role: UserRole, displayName: string) {
 }
 
 /**
- * A teacher who owns a board, a student assigned to it, and a student who is
- * not - the three positions every authority test needs.
+ * A teacher who owns a board, a student listed in `board_members`, and a
+ * student who is not - the three positions every authority test needs. The
+ * board has NO classroom, so this fixture is also the proof that an unassigned
+ * board behaves exactly as it did before classrooms existed.
  */
-export async function seedClassroom(
+export async function seedBoardWithMember(
   status: BoardStatus = "active",
-): Promise<Classroom> {
+): Promise<BoardFixture> {
   const teacher = await makeUser("teacher", "Course Instructor");
   const student = await makeUser("student", "Ada Lovelace");
   const outsider = await makeUser("student", "Grace Hopper");
@@ -47,4 +58,66 @@ export async function seedClassroom(
   }
 
   return { teacher, student, outsider, board };
+}
+
+export interface CohortFixture {
+  teacher: { id: string; email: string; displayName: string };
+  /** In the classroom, and in nothing else. The normal student. */
+  cohortStudent: { id: string; email: string; displayName: string };
+  /** In `board_members` only, NOT in the classroom. The escape hatch. */
+  guest: { id: string; email: string; displayName: string };
+  /** In neither. Must be indistinguishable from a missing board. */
+  outsider: { id: string; email: string; displayName: string };
+  classroom: Classroom;
+  board: Board;
+  /** Same classroom, second board: revocation must hit both at once. */
+  secondBoard: Board;
+}
+
+/**
+ * A cohort with two boards, one student who reaches them through the classroom,
+ * one guest who reaches only the first board through `board_members`, and one
+ * outsider who reaches nothing. Every position the access model has.
+ */
+export async function seedCohort(
+  status: BoardStatus = "active",
+): Promise<CohortFixture> {
+  const teacher = await makeUser("teacher", "Course Instructor");
+  const cohortStudent = await makeUser("student", "Ada Lovelace");
+  const guest = await makeUser("student", "Alan Turing");
+  const outsider = await makeUser("student", "Grace Hopper");
+
+  counter += 1;
+  const classroom = await createClassroom(testDb, {
+    name: `Cohort ${counter}`,
+    ownerId: teacher.id,
+  });
+  await addClassroomMembers(testDb, classroom.id, [cohortStudent.id]);
+
+  let board = await createBoard(testDb, {
+    title: "Requirements engineering",
+    ownerId: teacher.id,
+    classroomId: classroom.id,
+  });
+  const secondBoard = await createBoard(testDb, {
+    title: "Hexagonal architecture",
+    ownerId: teacher.id,
+    classroomId: classroom.id,
+  });
+  // The additive exception: on the first board only, and never in the cohort.
+  await addBoardMember(testDb, board.id, guest.id);
+
+  if (status !== "active") {
+    board = await setBoardStatus(testDb, board.id, status);
+  }
+
+  return {
+    teacher,
+    cohortStudent,
+    guest,
+    outsider,
+    classroom,
+    board,
+    secondBoard,
+  };
 }

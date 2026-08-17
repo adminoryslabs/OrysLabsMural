@@ -22,6 +22,7 @@ export default async function TeacherPanelPage() {
     title: board.title,
     href: `/boards/${board.id}`,
     manageHref: `/teacher/boards/${board.id}`,
+    classroom: board.classroomName,
     members: pluralize(board.memberCount, "member"),
     updated: formatUpdated(board.updatedAt, now),
     status: board.status,

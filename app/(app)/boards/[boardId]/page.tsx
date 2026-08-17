@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { BoardCanvas } from "@/components/board-canvas";
 import { requireUser } from "@/lib/auth/current-user";
 import { canAdministerBoard } from "@/lib/boards/authority";
-import { getBoardAccess, listBoardMembers } from "@/lib/boards/queries";
+import { getBoardAccess, listBoardRoster } from "@/lib/boards/queries";
 import { yjsServerUrl } from "@/lib/collab/config";
 import { db } from "@/lib/db";
 
@@ -23,7 +23,9 @@ export default async function BoardPage({
     notFound();
   }
 
-  const members = await listBoardMembers(db, access.board.id);
+  // Everyone who can reach the board, classroom included: the people panel
+  // would otherwise tell a cohort of twenty-five that nobody is assigned.
+  const members = await listBoardRoster(db, access.board.id);
 
   return (
     <main className="app-main-fixed">

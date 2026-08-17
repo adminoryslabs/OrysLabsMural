@@ -7,7 +7,7 @@ import { encodeUpdate } from "@/yjs-server/protocol";
 import type { YjsServer } from "@/yjs-server/server";
 import * as Y from "yjs";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 import {
   cookieFor,
   createClient,
@@ -47,7 +47,7 @@ afterEach(async () => {
 
 describe("the server states the board status on connect", () => {
   it("tells a member it may write on an active board", async () => {
-    const { student, board } = await seedClassroom("active");
+    const { student, board } = await seedBoardWithMember("active");
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -60,7 +60,7 @@ describe("the server states the board status on connect", () => {
   });
 
   it("tells a student it may not write on a readonly board", async () => {
-    const { student, board } = await seedClassroom("readonly");
+    const { student, board } = await seedBoardWithMember("readonly");
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -73,7 +73,7 @@ describe("the server states the board status on connect", () => {
   });
 
   it("tells the owning teacher it may not write on a frozen board", async () => {
-    const { teacher, board } = await seedClassroom("frozen");
+    const { teacher, board } = await seedBoardWithMember("frozen");
     const client = track(
       createClient(server, board.id, await cookieFor(teacher.id)),
     );
@@ -88,7 +88,7 @@ describe("the server states the board status on connect", () => {
 
 describe("a status change reaches an already-connected client", () => {
   it("pushes a freeze without the client doing anything at all", async () => {
-    const { student, board } = await seedClassroom("active");
+    const { student, board } = await seedBoardWithMember("active");
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -113,7 +113,7 @@ describe("a status change reaches an already-connected client", () => {
   });
 
   it("pushes the unfreeze to a client that has stopped sending write frames", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -154,7 +154,7 @@ describe("a status change reaches an already-connected client", () => {
   });
 
   it("restores a client that was actually refused, without a reload", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -191,7 +191,7 @@ describe("a status change reaches an already-connected client", () => {
   });
 
   it("does not open a second participation row for a status change", async () => {
-    const { student, board } = await seedClassroom("active");
+    const { student, board } = await seedBoardWithMember("active");
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -215,7 +215,7 @@ describe("a status change reaches an already-connected client", () => {
   });
 
   it("closes a client whose membership was revoked, as not found", async () => {
-    const { student, board } = await seedClassroom("active");
+    const { student, board } = await seedBoardWithMember("active");
     const client = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -236,7 +236,7 @@ describe("a status change reaches an already-connected client", () => {
 
 describe("the pushed status is a hint, never the authority", () => {
   it("ignores a forged status frame sent by a client", async () => {
-    const { teacher, student, board } = await seedClassroom("readonly");
+    const { teacher, student, board } = await seedBoardWithMember("readonly");
     const reader = track(
       createClient(server, board.id, await cookieFor(teacher.id)),
     );
@@ -270,7 +270,7 @@ describe("the pushed status is a hint, never the authority", () => {
   });
 
   it("still refuses a client that ignores the pushed read-only status", async () => {
-    const { teacher, student, board } = await seedClassroom("readonly");
+    const { teacher, student, board } = await seedBoardWithMember("readonly");
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );

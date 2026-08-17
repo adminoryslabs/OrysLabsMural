@@ -638,6 +638,14 @@ form.landing-form input[type="password"] {
   flex-shrink: 0;
 }
 
+/* The classroom filter sits in the header row, so it opts out of the full-width
+   form-field default the admin screens use. */
+.page-head-actions select {
+  width: auto;
+  margin-bottom: 0;
+  max-width: 240px;
+}
+
 .view-toggle {
   display: flex;
   align-items: center;
@@ -724,6 +732,14 @@ form.landing-form input[type="password"] {
   margin: 0 0 16px;
 }
 
+/* The cohort a board is taught to. Emphasised inside the muted meta line
+   because on a classroom board it, not the member list, answers "who is this
+   for". */
+.board-card-classroom {
+  color: var(--ink);
+  font-weight: 500;
+}
+
 .presence {
   display: flex;
   align-items: center;
@@ -791,7 +807,26 @@ form.landing-form input[type="password"] {
 
 .board-row-action {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 4px;
+}
+
+/* "Manage" sits beside the state control, in the same quiet language. */
+.board-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-card-actions .btn-quiet,
+.board-row-action .btn-quiet {
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line);
 }
 
 @media (max-width: 720px) {
@@ -1318,6 +1353,13 @@ button.danger {
 }
 
 .form-inline-field input {
+  margin-bottom: 0;
+}
+
+/* The board's classroom picker: a select and its save button on one line. */
+.classroom-picker select {
+  width: auto;
+  min-width: 240px;
   margin-bottom: 0;
 }
 

@@ -8,7 +8,7 @@ import {
   removeBoardMembersBatch,
 } from "@/lib/boards/membership";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 
 beforeEach(async () => {
   await resetDatabase();
@@ -34,7 +34,7 @@ describe("parseEmailList", () => {
 
 describe("addBoardMembersBatch", () => {
   it("adds every matching account in one action", async () => {
-    const { teacher, board } = await seedClassroom("active");
+    const { teacher, board } = await seedBoardWithMember("active");
     const first = await createUser(testDb, {
       email: "batch-one@example.com",
       password: "s3cret-password",
@@ -65,7 +65,7 @@ describe("addBoardMembersBatch", () => {
   });
 
   it("reports matched, already-member and unknown emails separately", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
     const newcomer = await createUser(testDb, {
       email: "newcomer@example.com",
       password: "s3cret-password",
@@ -93,7 +93,7 @@ describe("addBoardMembersBatch", () => {
   });
 
   it("merges ids and emails and never inserts the same user twice", async () => {
-    const { teacher, board } = await seedClassroom("active");
+    const { teacher, board } = await seedBoardWithMember("active");
     const user = await createUser(testDb, {
       email: "both-ways@example.com",
       password: "s3cret-password",
@@ -113,7 +113,7 @@ describe("addBoardMembersBatch", () => {
   });
 
   it("ignores forged user ids instead of failing the batch", async () => {
-    const { teacher, board } = await seedClassroom("active");
+    const { teacher, board } = await seedBoardWithMember("active");
     const real = await createUser(testDb, {
       email: "real@example.com",
       password: "s3cret-password",
@@ -132,7 +132,7 @@ describe("addBoardMembersBatch", () => {
   });
 
   it("refuses a student, whatever the form said", async () => {
-    const { student, outsider, board } = await seedClassroom("active");
+    const { student, outsider, board } = await seedBoardWithMember("active");
 
     await expect(
       addBoardMembersBatch(testDb, {
@@ -147,7 +147,7 @@ describe("addBoardMembersBatch", () => {
   });
 
   it("refuses a board that does not exist", async () => {
-    const { teacher } = await seedClassroom("active");
+    const { teacher } = await seedBoardWithMember("active");
     await expect(
       addBoardMembersBatch(testDb, {
         boardId: "00000000-0000-4000-8000-000000000000",
@@ -160,7 +160,7 @@ describe("addBoardMembersBatch", () => {
 
 describe("removeBoardMembersBatch", () => {
   it("removes several members at once and reports the ones that were not members", async () => {
-    const { teacher, student, outsider, board } = await seedClassroom("active");
+    const { teacher, student, outsider, board } = await seedBoardWithMember("active");
     const second = await createUser(testDb, {
       email: "second@example.com",
       password: "s3cret-password",
@@ -182,7 +182,7 @@ describe("removeBoardMembersBatch", () => {
   });
 
   it("removes by pasted email and reports unknown addresses", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
 
     const result = await removeBoardMembersBatch(testDb, {
       boardId: board.id,
@@ -196,7 +196,7 @@ describe("removeBoardMembersBatch", () => {
   });
 
   it("refuses a student, whatever the form said", async () => {
-    const { student, board } = await seedClassroom("active");
+    const { student, board } = await seedBoardWithMember("active");
 
     await expect(
       removeBoardMembersBatch(testDb, {

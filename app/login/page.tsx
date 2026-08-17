@@ -25,7 +25,7 @@ export default async function LoginPage({
     <div className="landing">
       <header className="landing-header">
         <span className="brand-mark" aria-hidden="true" />
-        <span className="wordmark">OrysLabs Mural</span>
+        <span className="wordmark">OrysLabs Collab</span>
         <span className="landing-header-suffix">Academy</span>
       </header>
 

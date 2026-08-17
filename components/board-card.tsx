@@ -10,6 +10,12 @@ export interface BoardCardData {
   href: string;
   /** Pre-formatted on the server, e.g. "7 members". Omitted for students. */
   members?: string;
+  /**
+   * The cohort this board is taught to, or null when it is unassigned. It is
+   * shown because it is the answer to "who can open this", which on a classroom
+   * board is no longer the member list.
+   */
+  classroom?: string | null;
   /** Pre-formatted on the server, e.g. "Updated 18:02". */
   updated: string;
   /**
@@ -22,16 +28,37 @@ export interface BoardCardData {
   online: PresencePerson[];
 }
 
+/**
+ * The way into a board's settings: members, its classroom, rename and delete.
+ * Only teachers get a `manageHref`, so a student never sees it.
+ *
+ * It has to be a visible, named action. Clicking a board opens the canvas —
+ * which is right — so without this there is no route to the settings at all.
+ */
+function ManageLink({ board }: { board: BoardCardData }) {
+  if (!board.manageHref) return null;
+  return (
+    <Link className="btn-quiet" href={board.manageHref}>
+      Manage
+    </Link>
+  );
+}
+
 function Meta({ board }: { board: BoardCardData }) {
   return (
     <>
+      {board.classroom ? (
+        <>
+          <span className="board-card-classroom">{board.classroom}</span>
+          {" · "}
+        </>
+      ) : null}
       {board.members ? (
         <>
-          {board.manageHref ? (
-            <Link href={board.manageHref}>{board.members}</Link>
-          ) : (
-            board.members
-          )}
+          {/* Plain text on purpose. This used to be the only link to the board's
+              settings, which reads as a statistic and nobody found it. The way
+              in is the explicit "Manage" action instead. */}
+          {board.members}
           {" · "}
         </>
       ) : null}
@@ -80,7 +107,10 @@ export function BoardCard({
 
       <div className="board-card-foot">
         <StatusBadge status={board.status} />
-        {action}
+        <div className="board-card-actions">
+          <ManageLink board={board} />
+          {action}
+        </div>
       </div>
     </article>
   );
@@ -107,7 +137,10 @@ export function BoardRow({
 
       <PresenceRow people={board.online} />
       <StatusBadge status={board.status} />
-      <div className="board-row-action">{action}</div>
+      <div className="board-row-action">
+        <ManageLink board={board} />
+        {action}
+      </div>
     </div>
   );
 }

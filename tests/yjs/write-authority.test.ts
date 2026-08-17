@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { removeBoardMember, setBoardStatus } from "@/lib/boards/queries";
 import type { YjsServer } from "@/yjs-server/server";
 import { resetDatabase, testDb } from "../setup/db";
-import { seedClassroom } from "../setup/fixtures";
+import { seedBoardWithMember } from "../setup/fixtures";
 import {
   cookieFor,
   createClient,
@@ -33,7 +33,7 @@ afterEach(async () => {
 
 describe("write authority on an active board", () => {
   it("relays an update from a member to every other client", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -57,7 +57,7 @@ describe("write authority on an active board", () => {
 
 describe("write authority on a readonly board", () => {
   it("rejects a student update and never relays it", async () => {
-    const { teacher, student, board } = await seedClassroom("readonly");
+    const { teacher, student, board } = await seedBoardWithMember("readonly");
     const studentClient = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -73,7 +73,7 @@ describe("write authority on a readonly board", () => {
   });
 
   it("still accepts the teacher's update", async () => {
-    const { teacher, student, board } = await seedClassroom("readonly");
+    const { teacher, student, board } = await seedBoardWithMember("readonly");
     const teacherClient = track(
       createClient(server, board.id, await cookieFor(teacher.id)),
     );
@@ -93,7 +93,7 @@ describe("write authority on a readonly board", () => {
 
 describe("write authority on a frozen board", () => {
   it("rejects everyone, the owning teacher included", async () => {
-    const { teacher, student, board } = await seedClassroom("frozen");
+    const { teacher, student, board } = await seedBoardWithMember("frozen");
     const teacherClient = track(
       createClient(server, board.id, await cookieFor(teacher.id)),
     );
@@ -114,7 +114,7 @@ describe("write authority on a frozen board", () => {
   });
 
   it("still lets both of them read the existing document", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
     const author = track(
       createClient(server, board.id, await cookieFor(teacher.id)),
     );
@@ -137,7 +137,7 @@ describe("write authority on a frozen board", () => {
 
 describe("freezing mid-session", () => {
   it("stops accepting updates from a client that was already connected", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -163,7 +163,7 @@ describe("freezing mid-session", () => {
   });
 
   it("resynchronises the refused client and lets it write again once unfrozen", async () => {
-    const { teacher, student, board } = await seedClassroom("frozen");
+    const { teacher, student, board } = await seedBoardWithMember("frozen");
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );
@@ -197,7 +197,7 @@ describe("freezing mid-session", () => {
   });
 
   it("refuses writes from a member who was removed from the board mid-session", async () => {
-    const { teacher, student, board } = await seedClassroom("active");
+    const { teacher, student, board } = await seedBoardWithMember("active");
     const writer = track(
       createClient(server, board.id, await cookieFor(student.id)),
     );

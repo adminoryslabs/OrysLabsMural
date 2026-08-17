@@ -10,12 +10,32 @@ import type { BoardStatus, UserRole } from "@/lib/db/schema";
 export interface BoardAuthorityInput {
   board: { id: string; ownerId: string; status: BoardStatus };
   user: { id: string; role: UserRole };
+  /**
+   * An explicit row in `board_members`. The ADDITIVE exception: a teaching
+   * assistant, or a guest who is not in the cohort. It only ever grants; it
+   * never removes what the classroom already granted.
+   */
   isMember: boolean;
+  /**
+   * The user belongs to the classroom this board is assigned to. Optional and
+   * fail-closed on purpose: a caller that has not looked the classroom up
+   * grants nothing, which is the safe direction to be wrong in.
+   */
+  isClassroomMember?: boolean;
 }
 
 function isTeacher(role: UserRole): boolean {
   // Explicit comparison: any unexpected value is treated as a student.
   return role === "teacher";
+}
+
+/**
+ * The two membership paths, unified. They are a UNION, never an intersection:
+ * the classroom is the source of truth, and `board_members` is the escape
+ * hatch bolted next to it.
+ */
+function belongsToBoard(input: BoardAuthorityInput): boolean {
+  return input.isMember === true || input.isClassroomMember === true;
 }
 
 export function isBoardOwner(input: {
@@ -26,12 +46,12 @@ export function isBoardOwner(input: {
 }
 
 /**
- * Read access. Teachers supervise every board in the course; students only see
- * the boards they were assigned to.
+ * Read access. Teachers supervise every board in the course; students see the
+ * boards of their classroom, plus any board they were listed on explicitly.
  */
 export function canViewBoard(input: BoardAuthorityInput): boolean {
   if (isTeacher(input.user.role)) return true;
-  return input.isMember;
+  return belongsToBoard(input);
 }
 
 /**
@@ -43,12 +63,16 @@ export function canViewBoard(input: BoardAuthorityInput): boolean {
  *   readonly - only teachers may write; students observe
  *   frozen   - nobody may write, not even the owner. Freezing is meant to stop
  *              the class dead, so it deliberately outranks ownership.
+ *
+ * STATUS OUTRANKS BOTH MEMBERSHIP PATHS. The status checks come first and are
+ * unconditional, so belonging to the classroom buys exactly as much on a frozen
+ * board as being listed in `board_members` does: nothing.
  */
 export function canWriteToBoard(input: BoardAuthorityInput): boolean {
   if (input.board.status === "frozen") return false;
   if (isTeacher(input.user.role)) return true;
   if (input.board.status === "readonly") return false;
-  return input.board.status === "active" && input.isMember;
+  return input.board.status === "active" && belongsToBoard(input);
 }
 
 /** Administrative actions on a board: membership, status, renaming. */
