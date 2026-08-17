@@ -11,6 +11,8 @@
  * They inherit `currentColor` and are `aria-hidden` by default: every icon in
  * this app sits next to a text label or inside a button with an accessible
  * name, so the icon itself is decorative.
+ *
+ * `image` was added for the icon-picker tool button.
  */
 
 export interface IconProps {
@@ -165,6 +167,17 @@ export function StickyNoteIcon(props: IconProps) {
     <Svg {...props}>
       <path d="M4 4.8h16v9.4L14.2 20H4z" />
       <path d="M20 14.2h-5.8V20" />
+    </Svg>
+  );
+}
+
+/** `image`: a framed picture — a mountain and a sun. Marks the icon tool. */
+export function ImageIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="M4 16.5 9.5 11l3.2 3.2L16 11l4 4.5" />
     </Svg>
   );
 }

@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { changeBoardStatusAction } from "@/app/(app)/teacher/actions";
 import { Avatar } from "./avatar";
 import {
   AcUnitIcon,
   ArrowBackIcon,
   GroupIcon,
+  ImageIcon,
   StickyNoteIcon,
   VisibilityIcon,
 } from "./icons";
@@ -18,6 +19,7 @@ import {
   STICKY_NOTE_SHORTCUT_LABEL,
   type StickyNoteColor,
 } from "@/lib/collab/sticky-note";
+import { ICON_CATALOG, iconUrl } from "@/lib/collab/icon-tool";
 
 const ORDER: readonly BoardStatus[] = ["active", "frozen", "readonly"];
 
@@ -184,6 +186,90 @@ export function StickyNoteTool({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * THE ICON TOOL.
+ *
+ * Unlike the sticky-note swatches, this catalog is going to grow — doodle
+ * icons keep getting added over time — so a fixed row of buttons does not
+ * scale the way it does for six colours. A picker popup does: it opens on
+ * demand, holds as many entries as the catalog ever grows to, and stays out
+ * of the top bar's way the rest of the time.
+ *
+ * Open/closed state is local and unpersisted, unlike the session panel's: an
+ * icon picker has nothing worth remembering between visits.
+ *
+ * `disabled` is the same reflection-not-enforcement contract as
+ * `StickyNoteTool`: the server re-checks write access on its own for both the
+ * element write and the file upload behind it.
+ */
+export function IconTool({
+  onSelect,
+  disabled,
+}: {
+  onSelect: (name: string) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const choose = (name: string) => {
+    setOpen(false);
+    onSelect(name);
+  };
+
+  return (
+    <div className="icon-tool" ref={wrapRef}>
+      <button
+        className="icon-tool-add"
+        type="button"
+        disabled={disabled}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        title={disabled ? "You cannot edit this board right now" : "Add an icon"}
+      >
+        <ImageIcon size={17} />
+        <span>Icons</span>
+      </button>
+
+      {open ? (
+        <div className="icon-picker" role="dialog" aria-label="Choose an icon">
+          <div className="icon-picker-grid">
+            {ICON_CATALOG.map((entry) => (
+              <button
+                key={entry.name}
+                className="icon-picker-item"
+                type="button"
+                onClick={() => choose(entry.name)}
+              >
+                <img src={iconUrl(entry.name)} alt="" width={36} height={36} />
+                <span className="sr-only">{entry.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
