@@ -11,7 +11,7 @@ export const testDb = drizzle(client, { schema });
 /** Wipes every table between tests. Order is handled by CASCADE. */
 export async function resetDatabase(): Promise<void> {
   await client.unsafe(
-    `TRUNCATE TABLE board_files, board_snapshots, board_sessions, board_members, classroom_members, sessions, boards, classrooms, users RESTART IDENTITY CASCADE`,
+    `TRUNCATE TABLE icon_catalog, board_files, board_snapshots, board_sessions, board_members, classroom_members, sessions, boards, classrooms, users RESTART IDENTITY CASCADE`,
   );
 }
 
