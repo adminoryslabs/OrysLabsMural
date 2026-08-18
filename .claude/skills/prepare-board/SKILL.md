@@ -32,6 +32,14 @@ break a board request into individual shapes; that judgment belongs to you.
 If either variable is missing, `read-board.ts`/`write-board.ts` fail with a
 clear message pointing back here — that is the signal setup did not happen.
 
+**Do not read or `cat` the `.env` file, and do not ask the user to paste its
+values.** Both scripts already start with `import "dotenv/config"`, which
+loads the project's `.env` into `process.env` before anything else runs — the
+same way any local `.env` var reaches any other script in this repo. Just run
+the scripts; if the file exists with the right keys, the vars are there
+already. Only ask the user for the values if a script actually fails with the
+missing-variable message.
+
 ## Workflow
 
 1. **Get the board id.** The user gives you a board URL
