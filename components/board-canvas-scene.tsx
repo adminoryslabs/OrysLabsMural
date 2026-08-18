@@ -707,13 +707,6 @@ export function BoardCanvasScene({
   /** At most one correction in flight; `updateScene` re-enters `onChange`. */
   const stickyCorrectionFrame = useRef<number | null>(null);
 
-  /**
-   * SPIKE INSTRUMENTATION. How many corrections this tab has broadcast, so the
-   * cost of the feature can be read off the console instead of guessed at.
-   * Delete this and its two uses before any of this ships.
-   */
-  const stickyCorrectionCount = useRef(0);
-
   const correctStickyOverflow = useCallback(() => {
     const scene = apiRef.current;
     if (!scene) return;
@@ -839,14 +832,6 @@ export function BoardCanvasScene({
       }
       return element;
     }) as ExcalidrawElement[];
-
-    stickyCorrectionCount.current += 1;
-    console.debug(
-      `[sticky-shrink] ${container.id.slice(0, 8)} ${boundText.fontSize}px -> ` +
-        `${decision.fontSize}px (grew to ${Math.round(container.height)}, ` +
-        `target ${Math.round(active.targetHeight)}); ` +
-        `${stickyCorrectionCount.current} correction(s) this tab`,
-    );
 
     scene.updateScene({
       elements: next,
