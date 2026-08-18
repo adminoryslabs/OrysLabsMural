@@ -43,7 +43,13 @@ import {
   viewportCentre,
   type StickyNoteColor,
 } from "@/lib/collab/sticky-note";
-import { findIcon, iconOrigin, iconUrl, ICON_SIZE } from "@/lib/collab/icon-tool";
+import {
+  findIcon,
+  iconDownloadUrl,
+  iconOrigin,
+  ICON_SIZE,
+  type IconCatalogEntry,
+} from "@/lib/collab/icon-tool";
 import { image as imageElement } from "@/lib/collab/elements";
 import type { BoardStatus } from "@/lib/db/schema";
 import {
@@ -191,6 +197,15 @@ export function BoardCanvasScene({
   const [fileError, setFileError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
+  /**
+   * The global icon bank, fetched once from `/api/icons`. Starts empty rather
+   * than undefined so `IconTool` always has an array to render — a teacher
+   * adding an icon mid-class does not reach an open tab until it reloads,
+   * which is an acceptable staleness window for a picker, unlike board content.
+   */
+  const [iconCatalog, setIconCatalog] = useState<readonly IconCatalogEntry[]>(
+    [],
+  );
   /** Colour of the next sticky note. Restored from localStorage on mount. */
   const [stickyColor, setStickyColor] = useState<StickyNoteColor>(
     DEFAULT_STICKY_NOTE_COLOR,
@@ -649,6 +664,21 @@ export function BoardCanvasScene({
     if (stored === "closed") setPanelOpen(false);
   }, []);
 
+  // Fetched once: the picker's catalog does not need to track a mid-session
+  // addition, and refetching on every open would add a round trip to a click
+  // that today's `syncFiles`-based upload path never needed.
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/icons", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : []))
+      .then((catalog: IconCatalogEntry[]) => setIconCatalog(catalog))
+      .catch(() => {
+        // Leaves the catalog empty; IconTool already renders that as
+        // "no icons yet" rather than crashing or hanging on a spinner.
+      });
+    return () => controller.abort();
+  }, []);
+
   const togglePanel = useCallback(() => {
     setPanelOpen((open) => {
       window.localStorage.setItem(PANEL_STORAGE_KEY, open ? "closed" : "open");
@@ -762,25 +792,33 @@ export function BoardCanvasScene({
   }, [tryEnterTextEditing]);
 
   /**
+   * The catalog state, readable from `createIcon` without making that
+   * callback depend on it — the same reasoning as `stickyColorRef`.
+   */
+  const iconCatalogRef = useRef<readonly IconCatalogEntry[]>([]);
+  iconCatalogRef.current = iconCatalog;
+
+  /**
    * Places one catalog icon at the centre of the current view.
    *
-   * The bytes come from our own static asset (`public/icons/<name>.png`),
-   * registered locally with `scene.addFiles` exactly like a pasted image
-   * would be. No upload call happens here: `syncFiles` already scans the
-   * scene for a file this client holds that the server does not, on every
-   * change and on its own interval, and uploads it through the existing
-   * `POST /api/boards/:boardId/files` route — the same path a pasted picture
-   * takes. Placing the element is what triggers that scan, via `onChange`.
+   * The bytes come from the global icon bank over HTTP (`/api/icons/:fileId`,
+   * see `lib/icons/icon-http.ts`), registered locally with `scene.addFiles`
+   * exactly like a pasted image would be. No upload call happens here:
+   * `syncFiles` already scans the scene for a file this client holds that the
+   * *board's* server does not, on every change and on its own interval, and
+   * uploads it through the existing `POST /api/boards/:boardId/files` route —
+   * the same path a pasted picture takes. Placing the element is what
+   * triggers that scan, via `onChange`.
    */
   const createIcon = useCallback((name: string) => {
     const scene = apiRef.current;
     if (!scene) return;
     if (!canEditRef.current) return;
 
-    const icon = findIcon(name);
+    const icon = findIcon(iconCatalogRef.current, name);
     if (!icon) return;
 
-    void fetch(iconUrl(name))
+    void fetch(iconDownloadUrl(icon.fileId))
       .then((response) => {
         // `fetch` only rejects on a network failure, never on a 404 — an
         // unchecked status would let a missing catalog asset decode straight
@@ -798,7 +836,10 @@ export function BoardCanvasScene({
         live.addFiles([
           {
             id: icon.fileId,
-            mimeType: "image/png",
+            // The catalog now accepts any of the allowed image formats, not
+            // just PNG, so the type has to come from the response rather than
+            // being assumed.
+            mimeType: blob.type || "image/png",
             dataURL,
             created: Date.now(),
           } as BinaryFileData,
@@ -1040,7 +1081,11 @@ export function BoardCanvasScene({
               // latch that already puts the whole canvas in view mode.
               disabled={readOnly}
             />
-            <IconTool onSelect={createIcon} disabled={readOnly} />
+            <IconTool
+              catalog={iconCatalog}
+              onSelect={createIcon}
+              disabled={readOnly}
+            />
           </>
         }
         presence={
