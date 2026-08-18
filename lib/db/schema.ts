@@ -298,6 +298,40 @@ export const boardFiles = pgTable(
 );
 
 /**
+ * THE GLOBAL DOODLE ICON BANK.
+ *
+ * Same shape as `board_files` — bytea storage, sniffed mime type, attribution —
+ * but global rather than per-board: an icon is shared class material, not
+ * something scoped to one board's authorisation domain. `file_id` is derived
+ * 1:1 from `name` (`` `icon-${name}` ``) wherever a row is inserted, so the
+ * primary key alone is enough to guarantee names don't collide; there is no
+ * separate unique index on `name`.
+ *
+ * Adding an icon used to mean committing a PNG under `public/icons/` and a
+ * line of code — this table exists so a teacher can add one from
+ * `/teacher/icons` instead, with no deploy in between.
+ */
+export const iconCatalog = pgTable("icon_catalog", {
+  /** `` `icon-${name}` ``. Matches the `fileId` an `image` element carries. */
+  fileId: text("file_id").primaryKey(),
+  /** The slug a picker/skill looks the icon up by. */
+  name: text("name").notNull(),
+  /** Accessible label shown in the picker. */
+  label: text("label").notNull(),
+  /** Sniffed from the bytes, not taken from the uploader's word for it. */
+  mimeType: text("mime_type").notNull(),
+  bytes: bytea("bytes").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  /** Attribution: which teacher added this icon. */
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
  * Authentication session store. `id` is the SHA-256 hash of the token held in
  * the cookie, so a database leak does not hand out usable sessions.
  */
@@ -331,6 +365,8 @@ export type BoardSession = typeof boardSessions.$inferSelect;
 export type BoardSnapshot = typeof boardSnapshots.$inferSelect;
 export type BoardFile = typeof boardFiles.$inferSelect;
 export type NewBoardFile = typeof boardFiles.$inferInsert;
+export type IconCatalogRow = typeof iconCatalog.$inferSelect;
+export type NewIconCatalogRow = typeof iconCatalog.$inferInsert;
 export type AuthSession = typeof sessions.$inferSelect;
 export type UserRole = (typeof userRole.enumValues)[number];
 export type BoardStatus = (typeof boardStatus.enumValues)[number];

@@ -24,7 +24,12 @@ export interface BoardAuthorityInput {
   isClassroomMember?: boolean;
 }
 
-function isTeacher(role: UserRole): boolean {
+/**
+ * The plain role check, exported for callers with no board in the picture at
+ * all — the global icon catalog's upload gate, for one. Every board-scoped
+ * function below is built on top of this same primitive.
+ */
+export function isTeacher(role: UserRole): boolean {
   // Explicit comparison: any unexpected value is treated as a student.
   return role === "teacher";
 }
