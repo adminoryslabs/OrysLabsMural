@@ -331,3 +331,113 @@ export function shouldCreateStickyNote(
 
   return true;
 }
+
+// ---- Shrink to fit -------------------------------------------------------
+
+/**
+ * THE FONT FLOOR. How small the text of a note is allowed to get.
+ *
+ * Below this, shrinking stops and the note is left exactly as Excalidraw left
+ * it — which today means the rectangle grows again, because that is upstream's
+ * deliberate behaviour (excalidraw/excalidraw#4450: "We went with
+ * expand-element-height instead of resize-text-to-fit") and there is no public
+ * flag to turn it off. Whether that is the right fallback, or whether the text
+ * should instead be clipped or the note flagged, is a product decision that has
+ * NOT been made. Nothing in this module assumes the value: change this one
+ * line and the whole behaviour moves with it.
+ */
+export const STICKY_NOTE_MIN_FONT_SIZE = 10;
+
+/**
+ * How much one correction takes off. Two points, so a default note has five
+ * steps between 20 and the floor, and each step is visible enough to be worth
+ * the broadcast it costs.
+ */
+export const STICKY_NOTE_FONT_STEP = 2;
+
+/**
+ * Sub-pixel slack. Excalidraw's own layout produces fractional heights, and a
+ * note that is 180.0001 tall has not overflowed — it has been rounded.
+ */
+const STICKY_HEIGHT_EPSILON = 0.5;
+
+export interface StickyShrinkAttempt {
+  /** The height Excalidraw settled on at that attempt. */
+  height: number;
+  /** The font size that attempt set. */
+  fontSize: number;
+}
+
+export interface StickyShrinkInput {
+  /**
+   * Whether the container is one of ours. A hand-drawn rectangle with bound
+   * text must keep Excalidraw's native growth behaviour, untouched: this
+   * feature is the sticky-note tool, not a change to how text works on the
+   * whole board.
+   */
+  isStickyNote: boolean;
+  /** The container height Excalidraw has just settled on. */
+  height: number;
+  /** The height the note must keep — its size before the text pushed on it. */
+  targetHeight: number;
+  /** The bound text's current font size. */
+  fontSize: number;
+  /**
+   * The previous correction of THIS note, and only while the text has not
+   * changed since. It is what makes the loop terminate on something other than
+   * the floor: if the last step bought no height at all, stepping again will
+   * not either, and an oscillating note in a live class is worse than a big one.
+   * `null` whenever the text changed, because then the comparison means nothing.
+   */
+  previousAttempt: StickyShrinkAttempt | null;
+  minFontSize?: number;
+  step?: number;
+}
+
+export type StickyShrinkDecision =
+  | { action: "shrink"; fontSize: number }
+  | {
+      action: "keep";
+      reason: "not-sticky" | "fits" | "floor" | "no-improvement";
+    };
+
+/**
+ * THE SHRINK RULE.
+ *
+ * Excalidraw grows the rectangle instead of shrinking the font when bound text
+ * does not fit, and there is no public flag to change that. So this does not
+ * predict its layout — it reads the result and decides whether to answer it:
+ * the note that grew gets one font step taken off and its height put back, and
+ * Excalidraw's next layout is the oracle for whether that was enough.
+ *
+ * Pure, and deliberately free of any Excalidraw import, so the whole decision
+ * is testable in plain Node. The caller owns the side effects: reading the
+ * scene, restoring the height, and pushing the result through `updateScene`.
+ */
+export function nextStickyFontSize(
+  input: StickyShrinkInput,
+): StickyShrinkDecision {
+  const minFontSize = input.minFontSize ?? STICKY_NOTE_MIN_FONT_SIZE;
+  const step = input.step ?? STICKY_NOTE_FONT_STEP;
+
+  if (!input.isStickyNote) return { action: "keep", reason: "not-sticky" };
+
+  if (input.height <= input.targetHeight + STICKY_HEIGHT_EPSILON) {
+    return { action: "keep", reason: "fits" };
+  }
+
+  if (input.fontSize <= minFontSize) return { action: "keep", reason: "floor" };
+
+  // Same text, and the last step bought nothing: stepping again is oscillation.
+  if (
+    input.previousAttempt !== null &&
+    input.height >= input.previousAttempt.height
+  ) {
+    return { action: "keep", reason: "no-improvement" };
+  }
+
+  const next = Math.max(minFontSize, input.fontSize - step);
+  if (next >= input.fontSize) return { action: "keep", reason: "floor" };
+
+  return { action: "shrink", fontSize: next };
+}
