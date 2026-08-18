@@ -356,6 +356,41 @@ export const STICKY_NOTE_MIN_FONT_SIZE = 10;
 export const STICKY_NOTE_FONT_STEP = 2;
 
 /**
+ * How much text a note will hold at all.
+ *
+ * Shrinking the font can only go as far as the floor, so without a cap there is
+ * always a paste that defeats it and the note grows anyway — which is exactly
+ * what a fixed size exists to prevent. Miro caps at ~1250 for its own geometry;
+ * this number is for ours, and it must stay at or below what actually fits at
+ * `STICKY_NOTE_MIN_FONT_SIZE`, or the cap does not deliver the promise.
+ *
+ * If a note still grows at this length, the fix is either a smaller cap or a
+ * smaller floor — a lower floor is defensible because a reader can zoom into a
+ * note; the real limit on the floor is that a wall of notes stays scannable
+ * without zooming.
+ */
+export const STICKY_NOTE_MAX_CHARS = 500;
+
+/**
+ * How much of a paste survives the cap.
+ *
+ * Returns the text to use and whether anything was dropped, so the caller can
+ * say so instead of silently eating half of what someone pasted. Deleting text
+ * a user believes they pasted is only acceptable when they are told.
+ */
+export function capStickyText(
+  current: string,
+  incoming: string,
+  selectionLength = 0,
+  maxChars = STICKY_NOTE_MAX_CHARS,
+): { text: string; trimmed: boolean } {
+  // What the pasted text replaces does not count against the budget.
+  const room = Math.max(0, maxChars - (current.length - selectionLength));
+  if (incoming.length <= room) return { text: incoming, trimmed: false };
+  return { text: incoming.slice(0, room), trimmed: true };
+}
+
+/**
  * Sub-pixel slack. Excalidraw's own layout produces fractional heights, and a
  * note that is 180.0001 tall has not overflowed — it has been rounded.
  */

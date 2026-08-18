@@ -4,11 +4,13 @@ import {
   STICKY_NOTE_COLORS,
   STICKY_NOTE_MARK,
   STICKY_NOTE_SIZE,
+  capStickyText,
   isStickyNote,
   isStickyNoteColor,
   nextStickyFontSize,
   STICKY_NOTE_FONT_SIZE,
   STICKY_NOTE_FONT_STEP,
+  STICKY_NOTE_MAX_CHARS,
   STICKY_NOTE_MIN_FONT_SIZE,
   readStickyNoteColor,
   recolourSelectedStickyNotes,
@@ -465,5 +467,49 @@ describe("shrink to fit", () => {
       action: "keep",
       reason: "floor",
     });
+  });
+});
+
+describe("the text cap", () => {
+  it("lets a paste that fits through untouched", () => {
+    expect(capStickyText("hello", " world", 0, 500)).toEqual({
+      text: " world",
+      trimmed: false,
+    });
+  });
+
+  it("keeps only what fits, and says it had to", () => {
+    // Silently eating half of what somebody pasted is the one outcome that is
+    // not acceptable; the caller uses `trimmed` to tell them.
+    expect(capStickyText("a".repeat(495), "b".repeat(20), 0, 500)).toEqual({
+      text: "bbbbb",
+      trimmed: true,
+    });
+  });
+
+  it("does not count the text a paste replaces against the budget", () => {
+    // Selecting everything and pasting 500 characters is a full note, not an
+    // overflow: what is selected is about to disappear.
+    expect(capStickyText("a".repeat(500), "b".repeat(500), 500, 500)).toEqual({
+      text: "b".repeat(500),
+      trimmed: false,
+    });
+  });
+
+  it("keeps nothing when the note is already full", () => {
+    expect(capStickyText("a".repeat(500), "more", 0, 500)).toEqual({
+      text: "",
+      trimmed: true,
+    });
+  });
+
+  it("treats an exactly-full paste as fitting", () => {
+    expect(capStickyText("", "a".repeat(500), 0, 500).trimmed).toBe(false);
+  });
+
+  it("defaults to the note's own cap", () => {
+    expect(
+      capStickyText("", "a".repeat(STICKY_NOTE_MAX_CHARS + 1)).text,
+    ).toHaveLength(STICKY_NOTE_MAX_CHARS);
   });
 });
