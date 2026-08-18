@@ -19,6 +19,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type {
   ExcalidrawElement,
+  ExcalidrawTextElement,
   OrderedExcalidrawElement,
 } from "@excalidraw/excalidraw/element/types";
 import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
@@ -35,6 +36,8 @@ import {
 import {
   DEFAULT_STICKY_NOTE_COLOR,
   STICKY_NOTE_COLOR_STORAGE_KEY,
+  isStickyNote,
+  nextStickyFontSize,
   readStickyNoteColor,
   recolourSelectedStickyNotes,
   shouldCreateStickyNote,
@@ -98,6 +101,18 @@ const CURSOR_THROTTLE_MS = 50;
  * imperceptible and makes edit_count mean something.
  */
 const BROADCAST_THROTTLE_MS = 80;
+
+/**
+ * How long a note stays correctable after its text editor closes.
+ *
+ * Excalidraw commits the text and re-lays the container out on the way out of
+ * the editor, so the last — and often the only — overflow of a paste arrives
+ * after `editingTextElement` has already gone back to null. Without a tail that
+ * final growth would never be answered. It is deliberately short: the tail is
+ * also the only window in which this client would touch a note it is no longer
+ * typing into.
+ */
+const STICKY_CORRECTION_TAIL_MS = 1500;
 
 /** How long after an edit a peer still reads as "Editing" in the roster. */
 const EDITING_WINDOW_MS = 5000;
@@ -629,15 +644,238 @@ export function BoardCanvasScene({
   // from rebuilding the session effect and reconnecting the socket.
   flushRef.current = flushLocalChanges;
 
+  // ---- Sticky notes: shrink the text instead of growing the note --------
+
+  /**
+   * WHY THIS EXISTS AT ALL.
+   *
+   * When bound text does not fit, Excalidraw grows the rectangle. That is
+   * deliberate upstream behaviour, not a bug (excalidraw/excalidraw#4450: "We
+   * went with expand-element-height instead of resize-text-to-fit"), and there
+   * is no public flag to turn it off. A wall of differently sized notes stops
+   * reading as a grid, which is the entire point of the tool.
+   *
+   * So it is corrected here, reactively, in our own code: we do not predict
+   * Excalidraw's layout, we let it run and answer the result. A note that grew
+   * gets one font step taken off and its height put back, and Excalidraw's next
+   * layout is the oracle for whether that was enough. Nothing is forked, nothing
+   * is patched, and no measurement function is imported — the package's
+   * `exports` map publishes its subpaths as TYPES ONLY, with no JS behind them,
+   * so `measureText` and `wrapText` do not exist at runtime.
+   *
+   * The decision itself is `nextStickyFontSize`, a pure function in
+   * `lib/collab/sticky-note.ts`; everything here is the side effects.
+   */
+
+  /**
+   * THE CONCURRENCY RULE: a note is corrected only by the client that has that
+   * note's text open in its own editor, plus a short tail for the commit.
+   *
+   * Every one of the 25 browsers runs `onChange`, and a note that grew reaches
+   * all of them. If they all answered it, they would all bump the version, all
+   * broadcast, and reconciliation would pick a winner between corrections that
+   * were never in conflict — 25 update frames for one keystroke. But
+   * `editingTextElement` is app state: it is per browser, it never enters the
+   * Yjs document, and only one client can be typing into a given note. So this
+   * ref is non-null on exactly one machine at a time, and a note arriving from a
+   * peer — through `applyRemote`, which is the only other way a note changes
+   * here — matches no session and is left alone.
+   *
+   * `targetHeight` is captured when the editor opens rather than fixed at
+   * `STICKY_NOTE_SIZE`: nobody can drag a note's handles while typing into it,
+   * so the height at that moment is the size the user last chose, and a note
+   * somebody resized by hand keeps the size they gave it.
+   */
+  const stickyEditingRef = useRef<{
+    containerId: string;
+    targetHeight: number;
+    /** When the editor closed, or null while it is still open. */
+    endedAt: number | null;
+  } | null>(null);
+
+  /**
+   * The last correction made to a note, and the text it was made against. This
+   * is what makes the loop terminate on something other than the font floor: if
+   * a step bought no height at all against the same text, the next one will not
+   * either. Keyed by text so ordinary typing — where the note legitimately
+   * needs another step — is never mistaken for oscillation.
+   */
+  const stickyAttemptsRef = useRef(
+    new Map<string, { text: string; height: number; fontSize: number }>(),
+  );
+
+  /** At most one correction in flight; `updateScene` re-enters `onChange`. */
+  const stickyCorrectionFrame = useRef<number | null>(null);
+
+  const correctStickyOverflow = useCallback(() => {
+    const scene = apiRef.current;
+    if (!scene) return;
+    // The authority path is untouched by this feature: a board this client may
+    // not write to gets no corrections at all. Same value `viewModeEnabled`
+    // uses, and the collaboration server would drop the update regardless.
+    if (!canEditRef.current) return;
+
+    const now = Date.now();
+    const appState = scene.getAppState();
+    const editing = appState.editingTextElement;
+    const editingContainerId =
+      editing !== null && editing.type === "text" && editing.containerId
+        ? editing.containerId
+        : null;
+
+    const elements = scene.getSceneElementsIncludingDeleted();
+    let session = stickyEditingRef.current;
+
+    if (editingContainerId !== null) {
+      if (session === null || session.containerId !== editingContainerId) {
+        const opened = elements.find((el) => el.id === editingContainerId);
+        // A hand-drawn rectangle with bound text keeps Excalidraw's native
+        // growth behaviour. This is the sticky-note tool, not a change to how
+        // text behaves in every shape on the board.
+        if (!opened || !isStickyNote(opened)) {
+          stickyEditingRef.current = null;
+          return;
+        }
+        session = {
+          containerId: editingContainerId,
+          targetHeight: opened.height,
+          endedAt: null,
+        };
+        stickyAttemptsRef.current.delete(editingContainerId);
+      } else {
+        session.endedAt = null;
+      }
+    } else if (session !== null) {
+      if (session.endedAt === null) {
+        session.endedAt = now;
+      } else if (now - session.endedAt > STICKY_CORRECTION_TAIL_MS) {
+        stickyAttemptsRef.current.delete(session.containerId);
+        session = null;
+      }
+    }
+
+    stickyEditingRef.current = session;
+    if (session === null) return;
+    const active = session;
+
+    const container = elements.find((el) => el.id === active.containerId);
+    if (!container || container.isDeleted || !isStickyNote(container)) {
+      stickyAttemptsRef.current.delete(active.containerId);
+      stickyEditingRef.current = null;
+      return;
+    }
+
+    const boundTextId = container.boundElements?.find(
+      (bound) => bound.type === "text",
+    )?.id;
+    const found = boundTextId
+      ? elements.find((el) => el.id === boundTextId && el.type === "text")
+      : undefined;
+    if (!found || found.isDeleted) return;
+    const boundText = found as ExcalidrawTextElement;
+
+    const attempt = stickyAttemptsRef.current.get(container.id);
+    const sameText =
+      attempt !== undefined && attempt.text === boundText.originalText;
+
+    const decision = nextStickyFontSize({
+      isStickyNote: true,
+      height: container.height,
+      targetHeight: active.targetHeight,
+      fontSize: boundText.fontSize,
+      previousAttempt: sameText
+        ? { height: attempt.height, fontSize: attempt.fontSize }
+        : null,
+    });
+
+    if (decision.action !== "shrink") return;
+
+    stickyAttemptsRef.current.set(container.id, {
+      text: boundText.originalText,
+      height: container.height,
+      fontSize: decision.fontSize,
+    });
+
+    /**
+     * The text element is scaled with the font rather than left for Excalidraw
+     * to lay out again. Its `text` already carries the line breaks Excalidraw
+     * chose at the old size, and glyph advances and line height are both linear
+     * in `fontSize`, so the same wrap points at a smaller size occupy exactly
+     * this much less room. If Excalidraw does re-lay the container out it
+     * overwrites all four numbers, which is the outcome we want anyway.
+     */
+    const ratio = decision.fontSize / boundText.fontSize;
+    const textWidth = boundText.width * ratio;
+    const textHeight = boundText.height * ratio;
+
+    const next = elements.map((element) => {
+      if (element.id === container.id) {
+        return {
+          ...element,
+          height: active.targetHeight,
+          version: element.version + 1,
+          versionNonce: nextVersionNonce(),
+        };
+      }
+      if (element.id === boundText.id) {
+        return {
+          ...element,
+          fontSize: decision.fontSize,
+          width: textWidth,
+          height: textHeight,
+          // Centred by hand for the same reason the size is scaled by hand.
+          x: container.x + (container.width - textWidth) / 2,
+          y: container.y + (active.targetHeight - textHeight) / 2,
+          version: element.version + 1,
+          versionNonce: nextVersionNonce(),
+        };
+      }
+      return element;
+    }) as ExcalidrawElement[];
+
+    scene.updateScene({
+      elements: next,
+      // A correction is not a user action. Without this, Ctrl+Z would step back
+      // through every shrink iteration instead of undoing what was typed.
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  }, []);
+
+  /**
+   * Deferred to the next frame: `onChange` runs inside Excalidraw's own update,
+   * and the correction is a reaction to a layout that has already happened, not
+   * part of it. The ref also collapses the burst of `onChange` calls a single
+   * paste produces into one correction pass.
+   */
+  const scheduleStickyCorrection = useCallback(() => {
+    if (stickyCorrectionFrame.current !== null) return;
+    stickyCorrectionFrame.current = requestAnimationFrame(() => {
+      stickyCorrectionFrame.current = null;
+      correctStickyOverflow();
+    });
+  }, [correctStickyOverflow]);
+
+  useEffect(
+    () => () => {
+      if (stickyCorrectionFrame.current !== null) {
+        cancelAnimationFrame(stickyCorrectionFrame.current);
+      }
+    },
+    [],
+  );
+
   const handleChange = useCallback(() => {
     // The bytes of a pasted image are local-only until this runs.
     scheduleFileSync();
+    // A sticky note Excalidraw has just grown is put back, one font step
+    // smaller. Costs one `find` over the scene when nothing is being typed.
+    scheduleStickyCorrection();
     if (flushTimer.current) return;
     flushTimer.current = setTimeout(() => {
       flushTimer.current = null;
       flushLocalChanges();
     }, BROADCAST_THROTTLE_MS);
-  }, [flushLocalChanges, scheduleFileSync]);
+  }, [flushLocalChanges, scheduleFileSync, scheduleStickyCorrection]);
 
   useEffect(
     () => () => {

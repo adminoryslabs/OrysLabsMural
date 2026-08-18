@@ -6,6 +6,10 @@ import {
   STICKY_NOTE_SIZE,
   isStickyNote,
   isStickyNoteColor,
+  nextStickyFontSize,
+  STICKY_NOTE_FONT_SIZE,
+  STICKY_NOTE_FONT_STEP,
+  STICKY_NOTE_MIN_FONT_SIZE,
   readStickyNoteColor,
   recolourSelectedStickyNotes,
   shouldCreateStickyNote,
@@ -345,5 +349,121 @@ describe("the shortcut guard", () => {
     expect(
       shouldCreateStickyNote(key(), { canWrite: false, editing: idle }),
     ).toBe(false);
+  });
+});
+
+
+describe("shrink to fit", () => {
+  /** A note that has just been grown by Excalidraw, at its default size. */
+  const grown = (over: Partial<Parameters<typeof nextStickyFontSize>[0]> = {}) =>
+    nextStickyFontSize({
+      isStickyNote: true,
+      height: 240,
+      targetHeight: STICKY_NOTE_SIZE,
+      fontSize: STICKY_NOTE_FONT_SIZE,
+      previousAttempt: null,
+      ...over,
+    });
+
+  it("takes one step off a note Excalidraw has grown", () => {
+    expect(grown()).toEqual({
+      action: "shrink",
+      fontSize: STICKY_NOTE_FONT_SIZE - STICKY_NOTE_FONT_STEP,
+    });
+  });
+
+  it("leaves a note that still fits alone", () => {
+    expect(grown({ height: STICKY_NOTE_SIZE })).toEqual({
+      action: "keep",
+      reason: "fits",
+    });
+  });
+
+  it("treats a sub-pixel overflow as fitting", () => {
+    // Excalidraw's layout produces fractional heights; 180.2 is a rounding
+    // artefact, and answering it would shrink every note on the board.
+    expect(grown({ height: STICKY_NOTE_SIZE + 0.2 })).toEqual({
+      action: "keep",
+      reason: "fits",
+    });
+  });
+
+  it("NEVER touches a container that is not one of ours", () => {
+    // A hand-drawn rectangle with bound text keeps Excalidraw's own growth
+    // behaviour. Without this guard the feature silently changes how text
+    // behaves in every shape on the board.
+    expect(grown({ isStickyNote: false })).toEqual({
+      action: "keep",
+      reason: "not-sticky",
+    });
+  });
+
+  it("stops at the font floor rather than shrinking forever", () => {
+    expect(grown({ fontSize: STICKY_NOTE_MIN_FONT_SIZE })).toEqual({
+      action: "keep",
+      reason: "floor",
+    });
+  });
+
+  it("never steps past the floor", () => {
+    expect(
+      grown({ fontSize: STICKY_NOTE_MIN_FONT_SIZE + 1, step: 4 }),
+    ).toEqual({ action: "shrink", fontSize: STICKY_NOTE_MIN_FONT_SIZE });
+  });
+
+  it("stops when the previous step against the same text bought nothing", () => {
+    // The oscillation guard: Excalidraw grew the note back to exactly the
+    // height the last correction answered. Another step would not help, and a
+    // note flickering in a live class is worse than a big one.
+    expect(
+      grown({ height: 240, previousAttempt: { height: 240, fontSize: 18 } }),
+    ).toEqual({ action: "keep", reason: "no-improvement" });
+  });
+
+  it("keeps going while the steps are still buying height", () => {
+    expect(
+      grown({ height: 220, previousAttempt: { height: 240, fontSize: 18 } }),
+    ).toEqual({ action: "shrink", fontSize: STICKY_NOTE_FONT_SIZE - STICKY_NOTE_FONT_STEP });
+  });
+
+  it("ignores a previous attempt made against different text", () => {
+    // The caller passes null once the text has changed: a note that grew
+    // because more was typed legitimately needs another step.
+    expect(grown({ height: 260, previousAttempt: null })).toEqual({
+      action: "shrink",
+      fontSize: STICKY_NOTE_FONT_SIZE - STICKY_NOTE_FONT_STEP,
+    });
+  });
+
+  it("terminates: repeated overflow reaches the floor and stays there", () => {
+    let fontSize = STICKY_NOTE_FONT_SIZE;
+    let steps = 0;
+    // The worst case the browser can produce — Excalidraw regrows the note
+    // every single time, and each step buys exactly one pixel.
+    for (let height = 400; steps < 100; height -= 1) {
+      const decision = nextStickyFontSize({
+        isStickyNote: true,
+        height,
+        targetHeight: STICKY_NOTE_SIZE,
+        fontSize,
+        previousAttempt: { height: height + 1, fontSize },
+      });
+      if (decision.action !== "shrink") break;
+      fontSize = decision.fontSize;
+      steps += 1;
+    }
+    expect(fontSize).toBe(STICKY_NOTE_MIN_FONT_SIZE);
+    expect(steps).toBe(
+      (STICKY_NOTE_FONT_SIZE - STICKY_NOTE_MIN_FONT_SIZE) /
+        STICKY_NOTE_FONT_STEP,
+    );
+  });
+
+  it("honours a floor set in one line", () => {
+    // The product decision is not made: nothing may assume 10px.
+    expect(grown({ fontSize: 14, minFontSize: 14 })).toEqual({
+      action: "keep",
+      reason: "floor",
+    });
   });
 });
