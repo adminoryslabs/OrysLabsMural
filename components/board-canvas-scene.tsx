@@ -691,24 +691,7 @@ export function BoardCanvasScene({
     targetHeight: number;
     /** When the editor closed, or null while it is still open. */
     endedAt: number | null;
-    /**
-     * The font size already seen to overflow this note at this target height.
-     * Growing never reaches it again, which is what stops growing and
-     * shrinking from trading steps forever.
-     */
-    overflowedAt: number | null;
   } | null>(null);
-
-  /**
-   * The note being resized right now, if it is one of ours.
-   *
-   * A resize is the other way room appears, so it has to correct too — but not
-   * while the handle is still moving: mid-drag the height is *meant* to be
-   * changing, and correcting against a height the user is still choosing would
-   * fight them. This remembers the note so the pass after they let go can
-   * re-baseline against the size they actually landed on.
-   */
-  const stickyResizingRef = useRef<string | null>(null);
 
   /**
    * The last correction made to a note, and the text it was made against. This
@@ -748,33 +731,6 @@ export function BoardCanvasScene({
         : null;
 
     const elements = scene.getSceneElementsIncludingDeleted();
-
-    // A resize in progress owns the height; leave it alone until it is over.
-    const resizing = appState.resizingElement;
-    if (resizing && !resizing.isDeleted && isStickyNote(resizing)) {
-      stickyResizingRef.current = resizing.id;
-      return;
-    }
-
-    // The handle was just released: re-baseline against the size the user
-    // chose, and forget everything learned at the old size — a note that
-    // overflowed at 12px when it was small has no such ceiling now that it is
-    // twice as tall.
-    const justResized = stickyResizingRef.current;
-    if (justResized !== null) {
-      stickyResizingRef.current = null;
-      const resized = elements.find((el) => el.id === justResized);
-      if (resized && !resized.isDeleted && isStickyNote(resized)) {
-        stickyAttemptsRef.current.delete(justResized);
-        stickyEditingRef.current = {
-          containerId: justResized,
-          targetHeight: resized.height,
-          endedAt: now,
-          overflowedAt: null,
-        };
-      }
-    }
-
     let session = stickyEditingRef.current;
 
     if (editingContainerId !== null) {
@@ -791,7 +747,6 @@ export function BoardCanvasScene({
           containerId: editingContainerId,
           targetHeight: opened.height,
           endedAt: null,
-          overflowedAt: null,
         };
         stickyAttemptsRef.current.delete(editingContainerId);
       } else {
@@ -830,12 +785,8 @@ export function BoardCanvasScene({
     const sameText =
       attempt !== undefined && attempt.text === boundText.originalText;
 
-    // New text invalidates what was learned about the old text.
-    if (!sameText) active.overflowedAt = null;
-
     const decision = nextStickyFontSize({
       isStickyNote: true,
-      overflowedAt: active.overflowedAt,
       height: container.height,
       targetHeight: active.targetHeight,
       fontSize: boundText.fontSize,
@@ -844,13 +795,7 @@ export function BoardCanvasScene({
         : null,
     });
 
-    if (decision.action === "keep") return;
-
-    if (decision.action === "shrink") {
-      // This size did not fit. Growing must never come back to it against the
-      // same text at the same size, or the two rules trade steps forever.
-      active.overflowedAt = boundText.fontSize;
-    }
+    if (decision.action !== "shrink") return;
 
     stickyAttemptsRef.current.set(container.id, {
       text: boundText.originalText,
@@ -897,9 +842,8 @@ export function BoardCanvasScene({
 
     stickyCorrectionCount.current += 1;
     console.debug(
-      `[sticky-${decision.action}] ${container.id.slice(0, 8)} ` +
-        `${boundText.fontSize}px -> ${decision.fontSize}px ` +
-        `(height ${Math.round(container.height)}, ` +
+      `[sticky-shrink] ${container.id.slice(0, 8)} ${boundText.fontSize}px -> ` +
+        `${decision.fontSize}px (grew to ${Math.round(container.height)}, ` +
         `target ${Math.round(active.targetHeight)}); ` +
         `${stickyCorrectionCount.current} correction(s) this tab`,
     );

@@ -390,33 +390,15 @@ export interface StickyShrinkInput {
    * `null` whenever the text changed, because then the comparison means nothing.
    */
   previousAttempt: StickyShrinkAttempt | null;
-  /**
-   * The smallest font size already known to overflow THIS text at THIS target
-   * height, or null when nothing is known yet.
-   *
-   * It is what stops growing and shrinking from fighting each other. Without
-   * it, a note that fits at 12px would step up to 14px, overflow, get pulled
-   * back to 12px, and start again — forever. Cleared whenever the text or the
-   * target height changes, because then the ceiling means nothing.
-   */
-  overflowedAt?: number | null;
   minFontSize?: number;
-  maxFontSize?: number;
   step?: number;
 }
 
 export type StickyShrinkDecision =
   | { action: "shrink"; fontSize: number }
-  | { action: "grow"; fontSize: number }
   | {
       action: "keep";
-      reason:
-        | "not-sticky"
-        | "fits"
-        | "floor"
-        | "no-improvement"
-        | "at-default"
-        | "ceiling";
+      reason: "not-sticky" | "fits" | "floor" | "no-improvement";
     };
 
 /**
@@ -436,30 +418,12 @@ export function nextStickyFontSize(
   input: StickyShrinkInput,
 ): StickyShrinkDecision {
   const minFontSize = input.minFontSize ?? STICKY_NOTE_MIN_FONT_SIZE;
-  const maxFontSize = input.maxFontSize ?? STICKY_NOTE_FONT_SIZE;
   const step = input.step ?? STICKY_NOTE_FONT_STEP;
-  const overflowedAt = input.overflowedAt ?? null;
 
   if (!input.isStickyNote) return { action: "keep", reason: "not-sticky" };
 
   if (input.height <= input.targetHeight + STICKY_HEIGHT_EPSILON) {
-    // It fits. The mirror of the shrink rule: room can appear because text was
-    // deleted or because the note was made bigger, and in both cases the text
-    // should climb back rather than stay tiny in a large note.
-    //
-    // The cap is deliberate. `STICKY_NOTE_FONT_SIZE` is the reading size of the
-    // class, so a bigger note means room for MORE TEXT, not bigger letters —
-    // otherwise a wall of differently sized notes has differently sized type
-    // again, which is the whole thing the fixed size exists to prevent.
-    if (input.fontSize >= maxFontSize) {
-      return { action: "keep", reason: "at-default" };
-    }
-
-    const grown = Math.min(maxFontSize, input.fontSize + step);
-    if (overflowedAt !== null && grown >= overflowedAt) {
-      return { action: "keep", reason: "ceiling" };
-    }
-    return { action: "grow", fontSize: grown };
+    return { action: "keep", reason: "fits" };
   }
 
   if (input.fontSize <= minFontSize) return { action: "keep", reason: "floor" };
