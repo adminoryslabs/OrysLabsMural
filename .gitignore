@@ -45,3 +45,8 @@ yarn-error.log*
 
 # Excalidraw fonts, copied from node_modules by `npm run assets`
 /public/excalidraw/
+
+# The icon catalog lives in the `icon_catalog` DB table now, not on disk.
+# Nothing writes here anymore, but this stays ignored in case a local script
+# ever dumps icon bytes here for a one-off need.
+/public/icons/
