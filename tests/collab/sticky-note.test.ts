@@ -372,20 +372,55 @@ describe("shrink to fit", () => {
     });
   });
 
-  it("leaves a note that still fits alone", () => {
+  it("leaves a note that fits and is already at the reading size alone", () => {
     expect(grown({ height: STICKY_NOTE_SIZE })).toEqual({
       action: "keep",
-      reason: "fits",
+      reason: "at-default",
     });
   });
 
   it("treats a sub-pixel overflow as fitting", () => {
     // Excalidraw's layout produces fractional heights; 180.2 is a rounding
-    // artefact, and answering it would shrink every note on the board.
+    // artefact, and answering it would shrink every note on the board. Reaching
+    // a "keep" at all proves it took the fitting branch and not the shrink one.
     expect(grown({ height: STICKY_NOTE_SIZE + 0.2 })).toEqual({
       action: "keep",
-      reason: "fits",
+      reason: "at-default",
     });
+  });
+
+  it("grows the font back when room appears", () => {
+    // Room appears two ways: text was deleted, or the note was made bigger.
+    // Both arrive here as "the height fits and the font is below the default".
+    expect(grown({ height: STICKY_NOTE_SIZE, fontSize: 12 })).toEqual({
+      action: "grow",
+      fontSize: 12 + STICKY_NOTE_FONT_STEP,
+    });
+  });
+
+  it("never grows past the reading size, however big the note gets", () => {
+    // A bigger note means room for MORE TEXT, not bigger letters. Otherwise a
+    // wall of differently sized notes has differently sized type again, which
+    // is exactly what the fixed size exists to prevent.
+    expect(
+      grown({ height: 400, targetHeight: 600, fontSize: STICKY_NOTE_FONT_SIZE }),
+    ).toEqual({ action: "keep", reason: "at-default" });
+  });
+
+  it("stops one step short of a size already known to overflow", () => {
+    // Without this, a note that fits at 12 steps up to 14, overflows, is pulled
+    // back to 12, and starts again. The two rules would trade steps forever.
+    expect(
+      grown({ height: STICKY_NOTE_SIZE, fontSize: 12, overflowedAt: 14 }),
+    ).toEqual({ action: "keep", reason: "ceiling" });
+  });
+
+  it("ignores a ceiling learned at a size the note no longer has", () => {
+    // The caller clears it when the target height changes; this proves the
+    // decision itself does not re-impose one that was never passed in.
+    expect(
+      grown({ height: 300, targetHeight: 360, fontSize: 12, overflowedAt: null }),
+    ).toEqual({ action: "grow", fontSize: 12 + STICKY_NOTE_FONT_STEP });
   });
 
   it("NEVER touches a container that is not one of ours", () => {
