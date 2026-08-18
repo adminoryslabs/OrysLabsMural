@@ -4,14 +4,21 @@
  * A doodle-style icon dropped on the canvas as an `image` element. Unlike a
  * sticky note there is no `convertToExcalidrawElements` step: an image
  * element is flat JSON (see `image()` in `lib/collab/elements.ts`), so this
- * module only needs to say which icons exist and where the next one goes —
- * the placement math mirrors `sticky-note.ts` on purpose, so the two tools
- * feel like the same family of button.
+ * module only needs to say where the next one goes — the placement math
+ * mirrors `sticky-note.ts` on purpose, so the two tools feel like the same
+ * family of button.
  *
- * Nothing here touches Excalidraw or the DOM, so it is testable in plain
- * Node. The viewport-centre helper lives in `sticky-note.ts` and is generic
- * enough to reuse as-is — callers import it from there directly rather than
- * this module re-exporting it.
+ * The catalog itself now lives in the database (`/api/icons`), not here — a
+ * teacher can add an icon from `/teacher/icons` without a deploy. This module
+ * stays pure and DB-free: `findIcon` takes the fetched catalog as a
+ * parameter rather than reaching out for it, the same way every other pure
+ * module in `lib/collab` takes its inputs as arguments instead of fetching
+ * them itself.
+ *
+ * Nothing here touches Excalidraw, the DOM or the network, so it is testable
+ * in plain Node. The viewport-centre helper lives in `sticky-note.ts` and is
+ * generic enough to reuse as-is — callers import it from there directly
+ * rather than this module re-exporting it.
  */
 
 /**
@@ -21,45 +28,25 @@
 export const ICON_SIZE = 120;
 
 export interface IconCatalogEntry {
-  /** Stable name, also the PNG's filename stem under `public/icons/`. */
+  /** Stable slug, unique across the catalog. */
   name: string;
   /** Accessible label shown in the picker. */
   label: string;
-  /**
-   * The `board_files` id this icon is uploaded under. A fixed catalog name
-   * rather than a content hash — `board_files`' `(boardId, fileId)` primary
-   * key with `onConflictDoNothing` already makes re-uploading the same id to
-   * the same board a safe no-op, so there is no need to hash the bytes.
-   */
+  /** The `icon_catalog`/`board_files` id this icon travels under. */
   fileId: string;
 }
 
-function entry(name: string, label: string): IconCatalogEntry {
-  return { name, label, fileId: `icon-${name}` };
+/** Where the browser and the agent skill both fetch an icon's bytes from. */
+export function iconDownloadUrl(fileId: string): string {
+  return `/api/icons/${encodeURIComponent(fileId)}`;
 }
 
-/** The doodle icon bank. Order here is the order the picker's grid shows. */
-export const ICON_CATALOG: readonly IconCatalogEntry[] = [
-  entry("bulb", "Bulb"),
-  entry("calendar", "Calendar"),
-  entry("checklist", "Checklist"),
-  entry("file", "File"),
-  entry("gear", "Gear"),
-  entry("lab", "Lab"),
-  entry("laptop", "Laptop"),
-  entry("padlock", "Padlock"),
-  entry("shield", "Shield"),
-  entry("user", "User"),
-] as const;
-
-/** Where the browser fetches an icon's bytes from — a static asset. */
-export function iconUrl(name: string): string {
-  return `/icons/${name}.png`;
-}
-
-/** Catalog lookup by name. `undefined` when nothing matches. */
-export function findIcon(name: string): IconCatalogEntry | undefined {
-  return ICON_CATALOG.find((icon) => icon.name === name);
+/** Catalog lookup by name, over an already-fetched catalog. */
+export function findIcon(
+  catalog: readonly IconCatalogEntry[],
+  name: string,
+): IconCatalogEntry | undefined {
+  return catalog.find((icon) => icon.name === name);
 }
 
 /**

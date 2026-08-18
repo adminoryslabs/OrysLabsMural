@@ -19,7 +19,7 @@ import {
   STICKY_NOTE_SHORTCUT_LABEL,
   type StickyNoteColor,
 } from "@/lib/collab/sticky-note";
-import { ICON_CATALOG, iconUrl } from "@/lib/collab/icon-tool";
+import { iconDownloadUrl, type IconCatalogEntry } from "@/lib/collab/icon-tool";
 
 const ORDER: readonly BoardStatus[] = ["active", "frozen", "readonly"];
 
@@ -205,11 +205,18 @@ export function StickyNoteTool({
  * `disabled` is the same reflection-not-enforcement contract as
  * `StickyNoteTool`: the server re-checks write access on its own for both the
  * element write and the file upload behind it.
+ *
+ * `catalog` is fetched once by the parent from `/api/icons` — this component
+ * stays a pure renderer over whatever it is handed, empty array included
+ * (shown as "no icons yet" rather than a blank grid, since that state is
+ * reachable on a fresh install before any teacher has added one).
  */
 export function IconTool({
+  catalog,
   onSelect,
   disabled,
 }: {
+  catalog: readonly IconCatalogEntry[];
   onSelect: (name: string) => void;
   disabled: boolean;
 }) {
@@ -255,19 +262,30 @@ export function IconTool({
 
       {open ? (
         <div className="icon-picker" role="dialog" aria-label="Choose an icon">
-          <div className="icon-picker-grid">
-            {ICON_CATALOG.map((entry) => (
-              <button
-                key={entry.name}
-                className="icon-picker-item"
-                type="button"
-                onClick={() => choose(entry.name)}
-              >
-                <img src={iconUrl(entry.name)} alt="" width={36} height={36} />
-                <span className="sr-only">{entry.label}</span>
-              </button>
-            ))}
-          </div>
+          {catalog.length === 0 ? (
+            <p className="muted">
+              No icons yet. A teacher can add some from Icons in the nav.
+            </p>
+          ) : (
+            <div className="icon-picker-grid">
+              {catalog.map((entry) => (
+                <button
+                  key={entry.name}
+                  className="icon-picker-item"
+                  type="button"
+                  onClick={() => choose(entry.name)}
+                >
+                  <img
+                    src={iconDownloadUrl(entry.fileId)}
+                    alt=""
+                    width={36}
+                    height={36}
+                  />
+                  <span className="sr-only">{entry.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       ) : null}
     </div>

@@ -10,17 +10,18 @@
  * `(boardId, fileId)` primary key with `onConflictDoNothing` (see
  * `lib/boards/files.ts`) is what makes a redundant upload harmless, so the
  * check is an optimisation, not a correctness requirement.
+ *
+ * The catalog itself is the app's global icon bank (`/api/icons`, backed by
+ * `icon_catalog` — see `lib/icons/`), not a local file anymore: a teacher can
+ * add an icon from `/teacher/icons` without touching this repo, so this
+ * script has to ask the running app what exists rather than reading
+ * `public/icons/` off disk.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { ICON_CATALOG } from "@/lib/collab/icon-tool";
-
-const PUBLIC_ICONS_DIR = join(process.cwd(), "public", "icons");
 
 /**
  * Uploads every catalog icon in `fileIds` that this board does not already
  * hold. A `fileId` outside the catalog is silently skipped — this only knows
- * how to source bytes for icons shipped under `public/icons/`; anything else
+ * how to source bytes for icons the app's catalog actually has; anything else
  * was either uploaded some other way already, or the write will fail on the
  * server the same way it always has for an unknown `fileId`.
  */
@@ -30,27 +31,53 @@ export async function ensureCatalogIconsUploaded(
   fileIds: ReadonlySet<string>,
   cookie: string,
 ): Promise<void> {
-  for (const fileId of fileIds) {
-    const icon = ICON_CATALOG.find((entry) => entry.fileId === fileId);
-    if (!icon) continue;
+  if (fileIds.size === 0) return;
 
-    const url = `${appUrl}/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(fileId)}`;
-    const head = await fetch(url, { method: "HEAD", headers: { Cookie: cookie } });
+  const catalogResponse = await fetch(`${appUrl}/api/icons`, {
+    headers: { Cookie: cookie },
+  });
+  if (!catalogResponse.ok) {
+    throw new Error(
+      `Failed to fetch the icon catalog from ${appUrl}/api/icons: HTTP ${catalogResponse.status}`,
+    );
+  }
+  const catalog = (await catalogResponse.json()) as Array<{ fileId: string }>;
+  const knownFileIds = new Set(catalog.map((entry) => entry.fileId));
+
+  for (const fileId of fileIds) {
+    if (!knownFileIds.has(fileId)) continue;
+
+    const boardFileUrl = `${appUrl}/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(fileId)}`;
+    const head = await fetch(boardFileUrl, {
+      method: "HEAD",
+      headers: { Cookie: cookie },
+    });
     if (head.ok) continue;
 
-    const bytes = await readFile(join(PUBLIC_ICONS_DIR, `${icon.name}.png`));
+    const bytesResponse = await fetch(
+      `${appUrl}/api/icons/${encodeURIComponent(fileId)}`,
+      { headers: { Cookie: cookie } },
+    );
+    if (!bytesResponse.ok) {
+      throw new Error(
+        `Failed to fetch icon bytes for "${fileId}": HTTP ${bytesResponse.status}`,
+      );
+    }
+    const mimeType =
+      bytesResponse.headers.get("content-type") ?? "image/png";
+    const bytes = new Uint8Array(await bytesResponse.arrayBuffer());
+
     const form = new FormData();
     form.append("fileId", fileId);
-    form.append("file", new Blob([bytes], { type: "image/png" }), fileId);
+    form.append("file", new Blob([bytes], { type: mimeType }), fileId);
 
-    const upload = await fetch(`${appUrl}/api/boards/${encodeURIComponent(boardId)}/files`, {
-      method: "POST",
-      headers: { Cookie: cookie },
-      body: form,
-    });
+    const upload = await fetch(
+      `${appUrl}/api/boards/${encodeURIComponent(boardId)}/files`,
+      { method: "POST", headers: { Cookie: cookie }, body: form },
+    );
     if (!upload.ok) {
       throw new Error(
-        `Failed to upload icon "${icon.name}" (fileId ${fileId}) to board ${boardId}: HTTP ${upload.status}`,
+        `Failed to upload icon (fileId ${fileId}) to board ${boardId}: HTTP ${upload.status}`,
       );
     }
   }

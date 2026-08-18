@@ -32,6 +32,14 @@ break a board request into individual shapes; that judgment belongs to you.
 If either variable is missing, `read-board.ts`/`write-board.ts` fail with a
 clear message pointing back here — that is the signal setup did not happen.
 
+**Do not read or `cat` the `.env` file, and do not ask the user to paste its
+values.** Both scripts already start with `import "dotenv/config"`, which
+loads the project's `.env` into `process.env` before anything else runs — the
+same way any local `.env` var reaches any other script in this repo. Just run
+the scripts; if the file exists with the right keys, the vars are there
+already. Only ask the user for the values if a script actually fails with the
+missing-variable message.
+
 ## Workflow
 
 1. **Get the board id.** The user gives you a board URL
@@ -101,31 +109,26 @@ auto-layout: you decide positions. A reasonable working canvas is roughly
 - Icons: unicode/emoji glyphs (⚠ ✓ ☆ ⚖ ①-⑩ etc.) still work fine inline in a
   `text` or as the first character of a `box` title, for anything not covered
   below.
-- **The doodle icon bank.** A fixed set of hand-drawn PNGs, matching the
+- **The doodle icon bank.** A growing set of hand-drawn images, matching the
   sketchy `roughness: 1` look of the shapes around them (a clean vector icon
-  would look pasted-on next to them). Place one with an `image` shape using
-  the `fileId` from this table — `write-board.ts` uploads the bytes
-  automatically the first time a board uses one, from `public/icons/`, using
-  `MURAL_AGENT_APP_URL` (see Setup above):
+  would look pasted-on next to them). It is the app's global catalog — a
+  teacher can add to it from `/teacher/icons` at any time, with no deploy —
+  so it is not a fixed list this file can print a table of; fetch the current
+  one before assuming a name exists:
+  ```
+  curl -s -H "Cookie: mural_session=$MURAL_AGENT_SESSION_TOKEN" \
+    "$MURAL_AGENT_APP_URL/api/icons"
+  ```
+  Place one with an `image` shape using the `fileId` from that response —
+  `write-board.ts` uploads the bytes to the board automatically the first
+  time it is used there, fetching them from the catalog over HTTP using
+  `MURAL_AGENT_APP_URL` (see Setup above).
 
-  | name        | fileId          | depicts                          |
-  | ----------- | --------------- | --------------------------------- |
-  | `bulb`      | `icon-bulb`      | idea / insight                    |
-  | `calendar`  | `icon-calendar`  | date / schedule                   |
-  | `checklist` | `icon-checklist` | tasks / requirements               |
-  | `file`      | `icon-file`      | document / artifact                |
-  | `gear`      | `icon-gear`      | configuration / mechanism           |
-  | `lab`       | `icon-lab`       | experiment / testing                |
-  | `laptop`    | `icon-laptop`    | code / development                  |
-  | `padlock`   | `icon-padlock`   | security / access control           |
-  | `shield`    | `icon-shield`    | protection / defense                |
-  | `user`      | `icon-user`      | person / actor                      |
-
-  Do not invent a `fileId` outside this table — it was never uploaded and the
-  element will render as a broken picture frame for the whole class. This
-  bank grows over time; if a request needs a glyph this table does not have,
-  tell the user rather than approximating with an emoji shape and calling it
-  the same thing.
+  Do not invent a `fileId` — an id the catalog does not list was never
+  uploaded and the element will render as a broken picture frame for the
+  whole class. If a request needs a glyph the catalog does not have, tell the
+  user rather than approximating with an emoji shape and calling it the same
+  thing.
 
 ## Why a session token, not a login step
 
@@ -143,10 +146,10 @@ it and mint a fresh one.
 
 - No board creation, membership, freeze/unfreeze, or deletion — those are
   teacher actions in the app itself, on purpose. This skill only draws.
-- No arbitrary image upload. `write-board.ts` uploads bytes only for the
-  catalog icons listed above (sourced from `public/icons/`); an `image` shape
-  with any other `fileId` still requires that file to already exist as a
-  `board_files` row.
+- No arbitrary image upload. `write-board.ts` uploads bytes only for icons
+  that already exist in the app's global catalog (`/api/icons`); an `image`
+  shape with any other `fileId` still requires that file to already exist as
+  a `board_files` row.
 - Authority is never bypassed. A frozen board rejects this exactly like it
   rejects a student — the websocket server re-checks `getBoardAccess` on every
   write, unconditionally.

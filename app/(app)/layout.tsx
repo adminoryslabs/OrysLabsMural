@@ -20,6 +20,7 @@ function navigationFor(role: "teacher" | "student"): NavLink[] {
         match: "/teacher/classrooms",
       },
       { href: "/teacher/users", label: "Students", match: "/teacher/users" },
+      { href: "/teacher/icons", label: "Icons", match: "/teacher/icons" },
       { href: "/participation", label: "Participation", match: "/participation" },
     ];
   }
