@@ -4,6 +4,7 @@ import {
   STICKY_NOTE_COLORS,
   STICKY_NOTE_MARK,
   STICKY_NOTE_SIZE,
+  STICKY_CHARS_AT_DEFAULT_FONT,
   capStickyText,
   isStickyNote,
   isStickyNoteColor,
@@ -15,6 +16,7 @@ import {
   readStickyNoteColor,
   recolourSelectedStickyNotes,
   shouldCreateStickyNote,
+  stickyFontSizeFor,
   stickyNoteOrigin,
   stickyNoteSkeleton,
   STICKY_NOTE_TEXT_COLOR,
@@ -516,5 +518,58 @@ describe("the text cap", () => {
     expect(
       capStickyText("", "a".repeat(STICKY_NOTE_MAX_CHARS + 1)).text,
     ).toHaveLength(STICKY_NOTE_MAX_CHARS);
+  });
+});
+
+describe("choosing the font before the text lands", () => {
+  it("leaves a short note at the reading size", () => {
+    expect(stickyFontSizeFor(STICKY_CHARS_AT_DEFAULT_FONT)).toBe(
+      STICKY_NOTE_FONT_SIZE,
+    );
+    expect(stickyFontSizeFor(0)).toBe(STICKY_NOTE_FONT_SIZE);
+  });
+
+  it("halves the font for four times the text", () => {
+    // Area is what holds text, so capacity goes with the SQUARE of the size.
+    // This is honest here, unlike a correction after the fact: the text really
+    // is re-wrapped at the size this returns.
+    expect(
+      stickyFontSizeFor(STICKY_CHARS_AT_DEFAULT_FONT * 4, {
+        defaultFontSize: 20,
+        minFontSize: 5,
+        charsAtDefault: STICKY_CHARS_AT_DEFAULT_FONT,
+      }),
+    ).toBe(10);
+  });
+
+  it("never goes below the floor, however much text arrives", () => {
+    expect(
+      stickyFontSizeFor(1_000_000, {
+        defaultFontSize: 20,
+        minFontSize: 5,
+        charsAtDefault: 130,
+      }),
+    ).toBe(5);
+  });
+
+  it("errs small rather than large", () => {
+    // A size that is a little too small costs legibility; one that is a little
+    // too large costs the fixed size, which is the promise being kept.
+    const size = stickyFontSizeFor(200, {
+      defaultFontSize: 20,
+      minFontSize: 5,
+      charsAtDefault: 130,
+    });
+    expect(size).toBe(Math.floor(20 * Math.sqrt(130 / 200)));
+    expect(size).toBeLessThan(20);
+  });
+
+  it("shrinks monotonically as the text grows", () => {
+    let previous = stickyFontSizeFor(1);
+    for (const chars of [100, 200, 400, 800, 1600]) {
+      const size = stickyFontSizeFor(chars);
+      expect(size).toBeLessThanOrEqual(previous);
+      previous = size;
+    }
   });
 });

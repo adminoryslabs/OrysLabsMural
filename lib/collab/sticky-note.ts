@@ -372,6 +372,55 @@ export const STICKY_NOTE_FONT_STEP = 2;
 export const STICKY_NOTE_MAX_CHARS = 800;
 
 /**
+ * THE ONE NUMBER TO CALIBRATE. How many characters fit in a note at
+ * `STICKY_NOTE_FONT_SIZE` before Excalidraw grows it.
+ *
+ * Measured against Excalidraw's DEFAULT hand-drawn font, which is the widest
+ * one it ships: a value that fits there fits in every other face. The note's
+ * skeleton deliberately does not set `fontFamily`, so that is what a note uses.
+ *
+ * To recalibrate: paste texts of increasing length into an empty note and find
+ * the largest one that leaves the note at `STICKY_NOTE_SIZE`. Everything else
+ * in this module is derived from it.
+ */
+export const STICKY_CHARS_AT_DEFAULT_FONT = 130;
+
+/**
+ * The font size to write a given amount of text at, decided BEFORE the text
+ * lands rather than after the note has already grown.
+ *
+ * This is the whole point of the approach. Shrinking the font afterwards does
+ * not re-wrap the lines — the line COUNT is fixed at whatever size the text was
+ * laid out at — so a correction after the fact can never bring the height back
+ * down, and the note stays tall until Excalidraw re-lays it out on its own.
+ * Choosing the size first means Excalidraw wraps once, already correctly, and
+ * there is nothing to correct.
+ *
+ * Area is what holds text, so capacity goes with the SQUARE of the font size —
+ * and here that is honest, because the text really is re-wrapped at the size
+ * this returns.
+ */
+export function stickyFontSizeFor(
+  charCount: number,
+  options: {
+    defaultFontSize?: number;
+    minFontSize?: number;
+    charsAtDefault?: number;
+  } = {},
+): number {
+  const defaultFontSize = options.defaultFontSize ?? STICKY_NOTE_FONT_SIZE;
+  const minFontSize = options.minFontSize ?? STICKY_NOTE_MIN_FONT_SIZE;
+  const charsAtDefault = options.charsAtDefault ?? STICKY_CHARS_AT_DEFAULT_FONT;
+
+  if (charCount <= charsAtDefault) return defaultFontSize;
+
+  const ideal = defaultFontSize * Math.sqrt(charsAtDefault / charCount);
+  // Floor rather than round: erring small costs legibility, erring large costs
+  // the fixed size, and the fixed size is the promise being kept here.
+  return Math.max(minFontSize, Math.floor(ideal));
+}
+
+/**
  * How much of a paste survives the cap.
  *
  * Returns the text to use and whether anything was dropped, so the caller can
