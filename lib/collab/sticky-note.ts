@@ -346,14 +346,98 @@ export function shouldCreateStickyNote(
  * NOT been made. Nothing in this module assumes the value: change this one
  * line and the whole behaviour moves with it.
  */
-export const STICKY_NOTE_MIN_FONT_SIZE = 10;
+export const STICKY_NOTE_MIN_FONT_SIZE = 5;
 
 /**
- * How much one correction takes off. Two points, so a default note has five
- * steps between 20 and the floor, and each step is visible enough to be worth
- * the broadcast it costs.
+ * How much one correction takes off. Two points: enough that each step is
+ * worth the broadcast it costs, small enough that the note lands close to the
+ * largest size that actually fits rather than overshooting past it.
  */
 export const STICKY_NOTE_FONT_STEP = 2;
+
+/**
+ * How much text a note will hold at all.
+ *
+ * Shrinking the font can only go as far as the floor, so without a cap there is
+ * always a paste that defeats it and the note grows anyway — which is exactly
+ * what a fixed size exists to prevent. Miro caps at ~1250 for its own geometry;
+ * this number is for ours, and it must stay at or below what actually fits at
+ * `STICKY_NOTE_MIN_FONT_SIZE`, or the cap does not deliver the promise.
+ *
+ * If a note still grows at this length, the fix is either a smaller cap or a
+ * smaller floor — a lower floor is defensible because a reader can zoom into a
+ * note; the real limit on the floor is that a wall of notes stays scannable
+ * without zooming.
+ */
+export const STICKY_NOTE_MAX_CHARS = 800;
+
+/**
+ * THE ONE NUMBER TO CALIBRATE. How many characters fit in a note at
+ * `STICKY_NOTE_FONT_SIZE` before Excalidraw grows it.
+ *
+ * Measured against Excalidraw's DEFAULT hand-drawn font, which is the widest
+ * one it ships: a value that fits there fits in every other face. The note's
+ * skeleton deliberately does not set `fontFamily`, so that is what a note uses.
+ *
+ * To recalibrate: paste texts of increasing length into an empty note and find
+ * the largest one that leaves the note at `STICKY_NOTE_SIZE`. Everything else
+ * in this module is derived from it.
+ */
+export const STICKY_CHARS_AT_DEFAULT_FONT = 130;
+
+/**
+ * The font size to write a given amount of text at, decided BEFORE the text
+ * lands rather than after the note has already grown.
+ *
+ * This is the whole point of the approach. Shrinking the font afterwards does
+ * not re-wrap the lines — the line COUNT is fixed at whatever size the text was
+ * laid out at — so a correction after the fact can never bring the height back
+ * down, and the note stays tall until Excalidraw re-lays it out on its own.
+ * Choosing the size first means Excalidraw wraps once, already correctly, and
+ * there is nothing to correct.
+ *
+ * Area is what holds text, so capacity goes with the SQUARE of the font size —
+ * and here that is honest, because the text really is re-wrapped at the size
+ * this returns.
+ */
+export function stickyFontSizeFor(
+  charCount: number,
+  options: {
+    defaultFontSize?: number;
+    minFontSize?: number;
+    charsAtDefault?: number;
+  } = {},
+): number {
+  const defaultFontSize = options.defaultFontSize ?? STICKY_NOTE_FONT_SIZE;
+  const minFontSize = options.minFontSize ?? STICKY_NOTE_MIN_FONT_SIZE;
+  const charsAtDefault = options.charsAtDefault ?? STICKY_CHARS_AT_DEFAULT_FONT;
+
+  if (charCount <= charsAtDefault) return defaultFontSize;
+
+  const ideal = defaultFontSize * Math.sqrt(charsAtDefault / charCount);
+  // Floor rather than round: erring small costs legibility, erring large costs
+  // the fixed size, and the fixed size is the promise being kept here.
+  return Math.max(minFontSize, Math.floor(ideal));
+}
+
+/**
+ * How much of a paste survives the cap.
+ *
+ * Returns the text to use and whether anything was dropped, so the caller can
+ * say so instead of silently eating half of what someone pasted. Deleting text
+ * a user believes they pasted is only acceptable when they are told.
+ */
+export function capStickyText(
+  current: string,
+  incoming: string,
+  selectionLength = 0,
+  maxChars = STICKY_NOTE_MAX_CHARS,
+): { text: string; trimmed: boolean } {
+  // What the pasted text replaces does not count against the budget.
+  const room = Math.max(0, maxChars - (current.length - selectionLength));
+  if (incoming.length <= room) return { text: incoming, trimmed: false };
+  return { text: incoming.slice(0, room), trimmed: true };
+}
 
 /**
  * Sub-pixel slack. Excalidraw's own layout produces fractional heights, and a

@@ -4,15 +4,19 @@ import {
   STICKY_NOTE_COLORS,
   STICKY_NOTE_MARK,
   STICKY_NOTE_SIZE,
+  STICKY_CHARS_AT_DEFAULT_FONT,
+  capStickyText,
   isStickyNote,
   isStickyNoteColor,
   nextStickyFontSize,
   STICKY_NOTE_FONT_SIZE,
   STICKY_NOTE_FONT_STEP,
+  STICKY_NOTE_MAX_CHARS,
   STICKY_NOTE_MIN_FONT_SIZE,
   readStickyNoteColor,
   recolourSelectedStickyNotes,
   shouldCreateStickyNote,
+  stickyFontSizeFor,
   stickyNoteOrigin,
   stickyNoteSkeleton,
   STICKY_NOTE_TEXT_COLOR,
@@ -453,9 +457,14 @@ describe("shrink to fit", () => {
       steps += 1;
     }
     expect(fontSize).toBe(STICKY_NOTE_MIN_FONT_SIZE);
+    // Rounded up, because the last step is clamped to the floor rather than
+    // overshooting past it: the gap does not have to divide evenly by the step,
+    // and it stopped doing so the first time the floor was retuned.
     expect(steps).toBe(
-      (STICKY_NOTE_FONT_SIZE - STICKY_NOTE_MIN_FONT_SIZE) /
-        STICKY_NOTE_FONT_STEP,
+      Math.ceil(
+        (STICKY_NOTE_FONT_SIZE - STICKY_NOTE_MIN_FONT_SIZE) /
+          STICKY_NOTE_FONT_STEP,
+      ),
     );
   });
 
@@ -465,5 +474,102 @@ describe("shrink to fit", () => {
       action: "keep",
       reason: "floor",
     });
+  });
+});
+
+describe("the text cap", () => {
+  it("lets a paste that fits through untouched", () => {
+    expect(capStickyText("hello", " world", 0, 500)).toEqual({
+      text: " world",
+      trimmed: false,
+    });
+  });
+
+  it("keeps only what fits, and says it had to", () => {
+    // Silently eating half of what somebody pasted is the one outcome that is
+    // not acceptable; the caller uses `trimmed` to tell them.
+    expect(capStickyText("a".repeat(495), "b".repeat(20), 0, 500)).toEqual({
+      text: "bbbbb",
+      trimmed: true,
+    });
+  });
+
+  it("does not count the text a paste replaces against the budget", () => {
+    // Selecting everything and pasting 500 characters is a full note, not an
+    // overflow: what is selected is about to disappear.
+    expect(capStickyText("a".repeat(500), "b".repeat(500), 500, 500)).toEqual({
+      text: "b".repeat(500),
+      trimmed: false,
+    });
+  });
+
+  it("keeps nothing when the note is already full", () => {
+    expect(capStickyText("a".repeat(500), "more", 0, 500)).toEqual({
+      text: "",
+      trimmed: true,
+    });
+  });
+
+  it("treats an exactly-full paste as fitting", () => {
+    expect(capStickyText("", "a".repeat(500), 0, 500).trimmed).toBe(false);
+  });
+
+  it("defaults to the note's own cap", () => {
+    expect(
+      capStickyText("", "a".repeat(STICKY_NOTE_MAX_CHARS + 1)).text,
+    ).toHaveLength(STICKY_NOTE_MAX_CHARS);
+  });
+});
+
+describe("choosing the font before the text lands", () => {
+  it("leaves a short note at the reading size", () => {
+    expect(stickyFontSizeFor(STICKY_CHARS_AT_DEFAULT_FONT)).toBe(
+      STICKY_NOTE_FONT_SIZE,
+    );
+    expect(stickyFontSizeFor(0)).toBe(STICKY_NOTE_FONT_SIZE);
+  });
+
+  it("halves the font for four times the text", () => {
+    // Area is what holds text, so capacity goes with the SQUARE of the size.
+    // This is honest here, unlike a correction after the fact: the text really
+    // is re-wrapped at the size this returns.
+    expect(
+      stickyFontSizeFor(STICKY_CHARS_AT_DEFAULT_FONT * 4, {
+        defaultFontSize: 20,
+        minFontSize: 5,
+        charsAtDefault: STICKY_CHARS_AT_DEFAULT_FONT,
+      }),
+    ).toBe(10);
+  });
+
+  it("never goes below the floor, however much text arrives", () => {
+    expect(
+      stickyFontSizeFor(1_000_000, {
+        defaultFontSize: 20,
+        minFontSize: 5,
+        charsAtDefault: 130,
+      }),
+    ).toBe(5);
+  });
+
+  it("errs small rather than large", () => {
+    // A size that is a little too small costs legibility; one that is a little
+    // too large costs the fixed size, which is the promise being kept.
+    const size = stickyFontSizeFor(200, {
+      defaultFontSize: 20,
+      minFontSize: 5,
+      charsAtDefault: 130,
+    });
+    expect(size).toBe(Math.floor(20 * Math.sqrt(130 / 200)));
+    expect(size).toBeLessThan(20);
+  });
+
+  it("shrinks monotonically as the text grows", () => {
+    let previous = stickyFontSizeFor(1);
+    for (const chars of [100, 200, 400, 800, 1600]) {
+      const size = stickyFontSizeFor(chars);
+      expect(size).toBeLessThanOrEqual(previous);
+      previous = size;
+    }
   });
 });

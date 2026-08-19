@@ -36,12 +36,15 @@ import {
 import {
   DEFAULT_STICKY_NOTE_COLOR,
   STICKY_NOTE_COLOR_STORAGE_KEY,
+  STICKY_NOTE_MAX_CHARS,
+  capStickyText,
   isStickyNote,
   nextStickyFontSize,
   readStickyNoteColor,
   recolourSelectedStickyNotes,
   shouldCreateStickyNote,
   stickyNoteOrigin,
+  stickyFontSizeFor,
   stickyNoteSkeleton,
   viewportCentre,
   type StickyNoteColor,
@@ -983,6 +986,145 @@ export function BoardCanvasScene({
         // Degrade silently: the note stays selected and the user presses Enter.
       }
     });
+  }, []);
+
+  /**
+   * THE TEXT CAP.
+   *
+   * Shrinking the font only reaches `STICKY_NOTE_MIN_FONT_SIZE`, so a paste
+   * long enough will always defeat it and the note grows anyway — the exact
+   * thing a fixed size exists to prevent. This is the guardrail Miro has for
+   * the same reason.
+   *
+   * It runs BEFORE Excalidraw sees the paste rather than trimming afterwards,
+   * and that ordering is the whole design. Excalidraw bakes its line breaks
+   * into the text element itself, so cutting the content from outside would
+   * leave the wrap points describing text that is no longer there — and
+   * recomputing them needs the measurement API the package does not expose at
+   * runtime. Handing Excalidraw already-short text means it lays the note out
+   * itself, correctly, and nothing is ever inconsistent.
+   *
+   * Capture phase, because Excalidraw's own paste handler must not run first.
+   */
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    /** The sticky note whose bound text is being edited, if any. */
+    /** The bound text being edited, but only when it belongs to one of ours. */
+    const editingStickyText = (): ExcalidrawTextElement | null => {
+      const scene = apiRef.current;
+      if (!scene) return null;
+      const editing = scene.getAppState().editingTextElement;
+      if (editing === null || editing.type !== "text" || !editing.containerId) {
+        return null;
+      }
+      const containerId = editing.containerId;
+      const elements = scene.getSceneElementsIncludingDeleted();
+      const container = elements.find((el) => el.id === containerId);
+      // A hand-drawn rectangle with bound text keeps Excalidraw's own limits.
+      if (!container || !isStickyNote(container)) return null;
+      const found = elements.find(
+        (el) => el.id === editing.id && el.type === "text",
+      );
+      return found ? (found as ExcalidrawTextElement) : null;
+    };
+
+    const editingStickyNote = (): boolean => editingStickyText() !== null;
+
+    /**
+     * Sets the font BEFORE the text arrives, so Excalidraw wraps it once at a
+     * size that fits instead of laying it out large and growing the note.
+     *
+     * Correcting afterwards cannot work: shrinking the font does not re-wrap,
+     * so the line count stays whatever it was at the old size and the height
+     * never comes back down.
+     */
+    const sizeFontForIncoming = (
+      boundText: ExcalidrawTextElement,
+      finalLength: number,
+    ) => {
+      const scene = apiRef.current;
+      if (!scene) return;
+      const fontSize = stickyFontSizeFor(finalLength);
+      if (fontSize === boundText.fontSize) return;
+
+      const next = scene.getSceneElementsIncludingDeleted().map((element) =>
+        element.id === boundText.id
+          ? {
+              ...element,
+              fontSize,
+              version: element.version + 1,
+              versionNonce: nextVersionNonce(),
+            }
+          : element,
+      ) as ExcalidrawElement[];
+
+      scene.updateScene({
+        elements: next,
+        // Choosing a size is part of the paste, not a step to undo past.
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    };
+
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      const boundText = editingStickyText();
+      if (boundText === null) return;
+
+      const incoming = event.clipboardData?.getData("text/plain") ?? "";
+      if (incoming === "") return;
+
+      const selectionLength = target.selectionEnd - target.selectionStart;
+      const { text, trimmed } = capStickyText(
+        target.value,
+        incoming,
+        selectionLength,
+      );
+
+      // Always taken over, even when nothing is trimmed: the font has to be
+      // decided before Excalidraw lays this text out, and letting its own
+      // handler run first is exactly what leaves the note oversized.
+      event.preventDefault();
+      event.stopPropagation();
+
+      const finalLength = target.value.length - selectionLength + text.length;
+      sizeFontForIncoming(boundText, finalLength);
+
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      target.setRangeText(text, start, end, "end");
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+
+      if (trimmed) {
+        apiRef.current?.setToast({
+          message: `A note holds ${STICKY_NOTE_MAX_CHARS} characters. The rest was left out.`,
+          closable: true,
+        });
+      }
+    };
+
+    /** The same ceiling, reached one keystroke at a time instead of at once. */
+    const onBeforeInput = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      const input = event as InputEvent;
+      // Deleting and replacing a selection can only ever shorten the text.
+      if (input.inputType.startsWith("delete")) return;
+      if (target.selectionEnd > target.selectionStart) return;
+      if (target.value.length < STICKY_NOTE_MAX_CHARS) return;
+      if (!editingStickyNote()) return;
+
+      event.preventDefault();
+    };
+
+    host.addEventListener("paste", onPaste, true);
+    host.addEventListener("beforeinput", onBeforeInput, true);
+    return () => {
+      host.removeEventListener("paste", onPaste, true);
+      host.removeEventListener("beforeinput", onBeforeInput, true);
+    };
   }, []);
 
   /**
