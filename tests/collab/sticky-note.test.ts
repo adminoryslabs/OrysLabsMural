@@ -455,9 +455,14 @@ describe("shrink to fit", () => {
       steps += 1;
     }
     expect(fontSize).toBe(STICKY_NOTE_MIN_FONT_SIZE);
+    // Rounded up, because the last step is clamped to the floor rather than
+    // overshooting past it: the gap does not have to divide evenly by the step,
+    // and it stopped doing so the first time the floor was retuned.
     expect(steps).toBe(
-      (STICKY_NOTE_FONT_SIZE - STICKY_NOTE_MIN_FONT_SIZE) /
-        STICKY_NOTE_FONT_STEP,
+      Math.ceil(
+        (STICKY_NOTE_FONT_SIZE - STICKY_NOTE_MIN_FONT_SIZE) /
+          STICKY_NOTE_FONT_STEP,
+      ),
     );
   });
 

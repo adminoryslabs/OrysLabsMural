@@ -346,12 +346,12 @@ export function shouldCreateStickyNote(
  * NOT been made. Nothing in this module assumes the value: change this one
  * line and the whole behaviour moves with it.
  */
-export const STICKY_NOTE_MIN_FONT_SIZE = 10;
+export const STICKY_NOTE_MIN_FONT_SIZE = 5;
 
 /**
- * How much one correction takes off. Two points, so a default note has five
- * steps between 20 and the floor, and each step is visible enough to be worth
- * the broadcast it costs.
+ * How much one correction takes off. Two points: enough that each step is
+ * worth the broadcast it costs, small enough that the note lands close to the
+ * largest size that actually fits rather than overshooting past it.
  */
 export const STICKY_NOTE_FONT_STEP = 2;
 
@@ -369,7 +369,7 @@ export const STICKY_NOTE_FONT_STEP = 2;
  * note; the real limit on the floor is that a wall of notes stays scannable
  * without zooming.
  */
-export const STICKY_NOTE_MAX_CHARS = 500;
+export const STICKY_NOTE_MAX_CHARS = 800;
 
 /**
  * How much of a paste survives the cap.
