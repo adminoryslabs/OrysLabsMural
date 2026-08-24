@@ -42,12 +42,22 @@ missing-variable message.
 
 ## Workflow
 
+Run the scripts through the `mural.mjs` wrapper in this folder — it locates
+the repo, switches to it, and invokes the real scripts with the repo's own
+`tsx`, so the commands work from any working directory (and resolve a relative
+`--file` against your cwd):
+
+```
+node .claude/skills/prepare-board/mural.mjs read  --board <id>
+node .claude/skills/prepare-board/mural.mjs write --board <id> --file <scene.json>
+```
+
 1. **Get the board id.** The user gives you a board URL
    (`/boards/<id>`) or just asks you to work on "the board I have open" — ask
    for the URL if you don't have it, do not guess an id.
 2. **Read before you write, if the board is not empty.** Run:
    ```
-   npx tsx .claude/skills/prepare-board/scripts/read-board.ts --board <id>
+   node .claude/skills/prepare-board/mural.mjs read --board <id>
    ```
    This dumps the current elements as JSON (position, size, colors, text,
    grouping). Use it to avoid overlapping existing content and to match the
@@ -56,7 +66,7 @@ missing-variable message.
    file, describing the whole layout — not one shape at a time.
 4. **Write it.** Run:
    ```
-   npx tsx .claude/skills/prepare-board/scripts/write-board.ts --board <id> --file <scene.json>
+   node .claude/skills/prepare-board/mural.mjs write --board <id> --file <scene.json>
    ```
    If it prints "The server refused this write", the board is frozen or you
    lack access — this is the same authority check every real client goes
@@ -116,8 +126,7 @@ auto-layout: you decide positions. A reasonable working canvas is roughly
   so it is not a fixed list this file can print a table of; fetch the current
   one before assuming a name exists:
   ```
-  curl -s -H "Cookie: mural_session=$MURAL_AGENT_SESSION_TOKEN" \
-    "$MURAL_AGENT_APP_URL/api/icons"
+  node .claude/skills/prepare-board/mural.mjs catalog
   ```
   Place one with an `image` shape using the `fileId` from that response —
   `write-board.ts` uploads the bytes to the board automatically the first
