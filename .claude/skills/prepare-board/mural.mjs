@@ -119,8 +119,13 @@ const scriptPath = resolve(
   script,
 );
 
-const child = spawn(tsxBin, [scriptPath, ...rest], {
+const args = [scriptPath, ...rest].map((arg) =>
+  process.platform === "win32" && /\s/.test(arg) ? `"${arg}"` : arg,
+);
+
+const child = spawn(tsxBin, args, {
   cwd: REPO_ROOT,
   stdio: "inherit",
+  shell: process.platform === "win32",
 });
 child.on("exit", (code) => process.exit(code ?? 1));
