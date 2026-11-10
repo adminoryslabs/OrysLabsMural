@@ -1492,6 +1492,11 @@ export function BoardCanvasScene({
               viewModeEnabled={readOnly}
               isCollaborating
               name={boardTitle}
+              // The canvas is always light. The app theme governs the chrome
+              // only: in dark mode Excalidraw inverts the whole canvas with a
+              // CSS filter, which would make a yellow sticky note look blue and
+              // mean two different things to two students in the same class.
+              theme="light"
               UIOptions={{
                 canvasActions: {
                   loadScene: false,
@@ -1499,7 +1504,7 @@ export function BoardCanvasScene({
                   // Export goes through our own buttons so the filename matches
                   // the board and both formats behave identically.
                   export: false,
-                  toggleTheme: true,
+                  toggleTheme: false,
                 },
               }}
             />
