@@ -54,6 +54,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: npm run typecheck
       - run: npx eslint .
       # Against a real PostgreSQL, never mocked — see CLAUDE.md.
@@ -102,6 +104,8 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:latest
           build-args: |
             NEXT_PUBLIC_YJS_URL=${{ env.YJS_URL }}
+          secrets: |
+            npm_token=${{ secrets.NPM_TOKEN }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 

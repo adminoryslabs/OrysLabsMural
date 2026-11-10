@@ -8,8 +8,10 @@
 # Full dependency tree, needed only to build. Never shipped.
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json package-lock.json .npmrc ./
+RUN --mount=type=secret,id=npm_token \
+  NODE_AUTH_TOKEN="$(cat /run/secrets/npm_token)" \
+  npm ci
 
 # Runtime dependencies only. This is what the worker image ships, and it is why
 # eslint, vitest, typescript, drizzle-kit and the type packages never travel to
@@ -17,8 +19,10 @@ RUN npm ci
 # TypeScript directly.
 FROM node:22-bookworm-slim AS prod-deps
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY package.json package-lock.json .npmrc ./
+RUN --mount=type=secret,id=npm_token \
+  NODE_AUTH_TOKEN="$(cat /run/secrets/npm_token)" \
+  npm ci --omit=dev
 # The worker is a plain Node process: it never renders a page and never touches
 # the canvas. Next and Excalidraw are still production dependencies because the
 # web application needs them, but here they are 600 MB of dead weight that would
