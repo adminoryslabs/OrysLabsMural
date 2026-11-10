@@ -246,7 +246,7 @@ h2 {
 }
 
 .btn-icon:hover {
-  color: var(--ink);
+  color: var(--accent);
 }
 
 /* Theme switch. The icon shows the theme it will switch to, and the touch
@@ -674,7 +674,7 @@ form.landing-form input[type="password"] {
 }
 
 .board-card:hover {
-  border-color: var(--line-strong);
+  border-color: var(--orys-line-brand);
 }
 
 .board-card-thumb {
@@ -952,7 +952,7 @@ form.landing-form input[type="password"] {
 }
 
 .sticky-swatch[aria-pressed="true"] {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -1042,7 +1042,7 @@ form.landing-form input[type="password"] {
 }
 
 .icon-picker-item:hover {
-  border-color: var(--line-strong);
+  border-color: var(--orys-line-brand);
   background: var(--surface-selected);
 }
 
