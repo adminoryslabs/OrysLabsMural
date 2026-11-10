@@ -12,38 +12,41 @@
    ========================================================================= */
 
 :root {
-  /* Surfaces */
-  --paper: #fbfbf9;
-  --surface: #ffffff;
-  --surface-sunken: #f5f6f1;
-  --surface-selected: #f0f1ec;
-  --surface-frozen: #f3f4ef;
+  /* The values come from the design system; the local names stay, so the
+     screen-level CSS keeps reading like the product rather than the brand. */
 
-  /* Text. `--text` and `--muted` are darkened to clear 4.5:1 on `--paper`.
-     Do not lighten them. */
-  --ink: #12141f;
-  --text: #4b5147;
-  --muted: #6b7065;
+  /* Surfaces */
+  --paper: var(--orys-bg);
+  --surface: var(--orys-bg-raised);
+  --surface-sunken: var(--orys-bg);
+  --surface-selected: var(--orys-bg-input);
+  --surface-frozen: var(--orys-bg);
+
+  /* Text */
+  --ink: var(--orys-fg);
+  --text: var(--orys-fg-dim);
+  --muted: var(--orys-fg-mute);
 
   /* Rules */
-  --line: #eeefe9;
-  --line-strong: #dcded1;
+  --line: var(--orys-line);
+  --line-strong: var(--orys-line-strong);
 
-  /* Accent. The chartreuse is a FILL only; accent-coloured text uses
-     `--accent-ink`, which is the only one of the two that passes AA. */
-  --accent: #a3e635;
-  --accent-ink: #4d7c0f;
+  /* Accent. The academy violet; `--accent-ink` is kept as a separate name for
+     the places that use it as text, and maps to the same token. */
+  --accent: var(--orys-accent);
+  --accent-ink: var(--orys-accent);
 
   /* Canvas */
-  --canvas-dot: #e8e9e2;
-  --canvas-label: #c2c6ba;
+  --canvas-dot: var(--orys-line);
+  --canvas-label: var(--orys-fg-mute);
 
   /* Not in the handoff: destructive actions and inline errors still need a
      colour, and neither ink nor the accent can carry that meaning. */
-  --danger: #a4302a;
+  --danger: var(--orys-fail);
 
-  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-ui: var(--orys-font-sans);
+  --font-display: var(--orys-font-sans);
+  --font-mono: var(--orys-font-mono);
 }
 
 * {
@@ -106,7 +109,7 @@ h2 {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #e4e5dd;
+  background: var(--orys-line-strong);
 }
 
 ::-webkit-scrollbar-track {
@@ -170,8 +173,8 @@ h2 {
   display: inline;
 }
 
-/* Buttons. `.btn-solid` is the ink primary; `.btn-quiet` is the underlined text
-   action used for consequential-but-reversible things. */
+/* Buttons. `.btn-solid` is the accent primary; `.btn-quiet` is the underlined
+   text action used for consequential-but-reversible things. */
 .btn-solid {
   display: inline-flex;
   align-items: center;
@@ -180,8 +183,9 @@ h2 {
   height: 40px;
   padding: 0 16px;
   border: none;
-  background: var(--ink);
-  color: var(--paper);
+  border-radius: var(--orys-r-md);
+  background: var(--accent);
+  color: var(--orys-fg-on-accent);
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
@@ -189,7 +193,7 @@ h2 {
 }
 
 .btn-solid:hover:not(:disabled) {
-  background: var(--accent-ink);
+  background: var(--orys-accent-bright);
 }
 
 .btn-solid:disabled {
@@ -205,6 +209,7 @@ h2 {
   height: 46px;
   padding: 0 10px;
   border: none;
+  border-radius: var(--orys-r-md);
   background: transparent;
   font-family: inherit;
   font-size: 13px;
@@ -232,6 +237,7 @@ h2 {
   height: 28px;
   padding: 0;
   border: none;
+  border-radius: var(--orys-r-md);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -251,6 +257,7 @@ h2 {
   height: 44px;
   padding: 0;
   border: 1px solid var(--line-strong);
+  border-radius: var(--orys-r-md);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
@@ -306,7 +313,7 @@ h2 {
   flex-shrink: 0;
   font-size: 9.5px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--orys-fg-on-accent);
   border: 1.5px solid var(--paper);
 }
 
@@ -659,6 +666,7 @@ form.landing-form input[type="password"] {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
+  border-radius: var(--orys-r-lg);
   background: var(--surface);
   min-height: 216px;
 }
@@ -904,6 +912,7 @@ form.landing-form input[type="password"] {
   height: 30px;
   padding: 0 11px;
   border: 1px solid var(--line-strong);
+  border-radius: var(--orys-r-md);
   background: var(--surface);
   color: var(--ink);
   font-family: inherit;
@@ -978,6 +987,7 @@ form.landing-form input[type="password"] {
   height: 30px;
   padding: 0 11px;
   border: 1px solid var(--line-strong);
+  border-radius: var(--orys-r-md);
   background: var(--surface);
   color: var(--ink);
   font-family: inherit;
@@ -1005,8 +1015,9 @@ form.landing-form input[type="password"] {
   width: 220px;
   padding: 10px;
   border: 1px solid var(--line-strong);
+  border-radius: var(--orys-r-lg);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--orys-shadow-panel);
 }
 
 .icon-picker-grid {
@@ -1078,6 +1089,7 @@ form.landing-form input[type="password"] {
 
 .state-control button {
   border: none;
+  border-radius: var(--orys-r-md);
   padding: 0 11px;
   height: 30px;
   font-family: inherit;
@@ -1093,6 +1105,20 @@ form.landing-form input[type="password"] {
   background: var(--ink);
   color: var(--paper);
   font-weight: 500;
+}
+
+/* The three states keep the shape of the status dot: active is the accent,
+   frozen is solid ink, and read only is an outline. */
+.state-control button:nth-child(1)[aria-checked="true"] {
+  background: var(--accent);
+  border-radius: var(--orys-r-md);
+  color: var(--orys-fg-on-accent);
+}
+
+.state-control button:nth-child(3)[aria-checked="true"] {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
 .state-control button:disabled {
@@ -1207,6 +1233,7 @@ form.landing-form input[type="password"] {
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
+  border-radius: var(--orys-r-md);
   background: var(--surface-sunken);
   color: var(--text);
   font-size: 13px;
@@ -1335,6 +1362,7 @@ form.landing-form input[type="password"] {
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
+  border-radius: var(--orys-r-lg);
   padding: 20px;
   margin-bottom: 20px;
 }
@@ -1355,6 +1383,7 @@ textarea {
   width: 100%;
   padding: 9px 10px;
   border: 1px solid var(--line-strong);
+  border-radius: var(--orys-r-md);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -1373,6 +1402,7 @@ button {
   font: inherit;
   padding: 8px 14px;
   border: 1px solid var(--line-strong);
+  border-radius: var(--orys-r-md);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
@@ -1388,15 +1418,15 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--orys-fg-on-accent);
   font-weight: 500;
 }
 
 button.primary:hover:not(:disabled) {
-  background: var(--accent-ink);
-  border-color: var(--accent-ink);
+  background: var(--orys-accent-bright);
+  border-color: var(--orys-accent-bright);
 }
 
 button.danger {
@@ -1471,6 +1501,7 @@ th {
   max-height: 260px;
   overflow-y: auto;
   border: 1px solid var(--line);
+  border-radius: var(--orys-r-md);
   background: var(--surface);
 }
 
