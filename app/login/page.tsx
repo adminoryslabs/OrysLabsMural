@@ -4,6 +4,7 @@ import {
   GroupsIcon,
   HistoryIcon,
 } from "@/components/icons";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { LoginForm } from "./login-form";
 
@@ -27,6 +28,7 @@ export default async function LoginPage({
         <span className="brand-mark" aria-hidden="true" />
         <span className="wordmark">OrysLabs Collab</span>
         <span className="landing-header-suffix">Academy</span>
+        <ThemeToggle />
       </header>
 
       <main className="landing-body">

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/login/actions";
 import { LogoutIcon } from "@/components/icons";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { requireUser } from "@/lib/auth/current-user";
 import { NavLinks, type NavLink } from "./nav-links";
 
@@ -47,6 +48,7 @@ export default async function AuthenticatedLayout({
 
         <div className="app-nav-user">
           <span className="app-nav-name">{user.displayName}</span>
+          <ThemeToggle />
           <form action={logoutAction}>
             <button className="btn-icon" type="submit" title="Log out">
               <LogoutIcon size={19} />
